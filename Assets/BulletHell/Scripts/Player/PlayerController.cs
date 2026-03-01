@@ -67,10 +67,20 @@ public class PlayerController : MonoBehaviour
         
         _fireTimer = 0f;
 
-        
+        if (BulletManager.Instance == null)
+        {
+            Debug.LogWarning("BulletManager.Instance is null. Please add BulletManager to scene.");
+            return;
+        }
 
-        // 子弹系统（BulletManager）后续再接，这里先用日志验证方向和节奏
-        Debug.Log($"Shoot dir={dir.normalized}, speed={bulletSpeed}, dmg={bulletDamage}");
+        BulletManager.Instance.SpawnBullet(
+            transform.position,
+            dir,
+            bulletSpeed,
+            bulletDamage,
+            1.5f,
+            BulletManager.BulletFaction.Player
+        );
     }
 
     private Vector2 GetAimDirection()
