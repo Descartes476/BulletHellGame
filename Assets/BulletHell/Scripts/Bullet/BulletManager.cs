@@ -1,15 +1,16 @@
 using System.Collections.Generic;
 using UnityEngine;
+public enum BulletFaction
+{
+    Player = 0,
+    Enemy = 1,
+}
 
 public class BulletManager : MonoBehaviour
 {
     public static BulletManager Instance { get; private set; }
 
-    public enum BulletFaction
-    {
-        Player = 0,
-        Enemy = 1,
-    }
+    
 
     [Header("Prefabs")]
     public GameObject playerBulletPrefab;

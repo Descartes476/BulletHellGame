@@ -63,7 +63,7 @@ public class PlayerController : MonoBehaviour
 
         Vector2 dir = GetAimDirection();
         if (dir.sqrMagnitude < 0.0001f)
-            return; 
+            return;
         
         _fireTimer = 0f;
 
@@ -79,7 +79,7 @@ public class PlayerController : MonoBehaviour
             bulletSpeed,
             bulletDamage,
             1.5f,
-            BulletManager.BulletFaction.Player
+            BulletFaction.Player
         );
     }
 
