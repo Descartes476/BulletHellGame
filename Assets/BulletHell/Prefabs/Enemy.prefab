@@ -112,7 +112,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fireInterval: 0.5
-  bulletSpeed: 10
-  bulletLifeTime: 2.5
+  bulletSpeed: 5
+  bulletLifeTime: 30
   bulletDamage: 1
+  shootPatterns:
+  - {fileID: 11400000, guid: 16a99dcb3a46ab24da869556f6c89f00, type: 2}
   aimJitterDegrees: 12
+  switchEveryShoot: 10

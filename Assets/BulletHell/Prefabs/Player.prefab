@@ -100,8 +100,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   moveSpeed: 8
   screenPadding: 0.2
-  fireInterval: 0.1
-  bulletSpeed: 15
+  fireInterval: 0.3
+  bulletSpeed: 5
   bulletDamage: 1
 --- !u!143 &574824652111043555
 CharacterController:

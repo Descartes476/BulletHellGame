@@ -7,9 +7,10 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float screenPadding = 0.2f; // 屏幕边界padding
 
     [Header("Shoot")]
-    [SerializeField] private float fireInterval = 0.1f; // 射击间隔
-    [SerializeField] private float bulletSpeed = 15f; // 子弹速度
+    [SerializeField] private float fireInterval = 0.3f; // 射击间隔
+    [SerializeField] private float bulletSpeed = 5f; // 子弹速度
     [SerializeField] private float bulletDamage = 1f; // 子弹伤害
+    [SerializeField] private float lifetime = 30f; // 子弹伤害
 
     private Camera _cam;
     private float _fireTimer;
@@ -78,7 +79,7 @@ public class PlayerController : MonoBehaviour
             dir,
             bulletSpeed,
             bulletDamage,
-            1.5f,
+            lifetime,
             BulletFaction.Player
         );
     }
