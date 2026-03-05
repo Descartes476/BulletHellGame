@@ -4,6 +4,7 @@ public class Bullet : MonoBehaviour
 {
     public float speed = 1f;
     public float damage = 1f;
+    public float radius = 0.1f;
     public float maxLifetime = 30f; // 子弹存在时间上限
     private float lifetime = 0f; // 子弹已存在时间
     private Vector2 moveDir;

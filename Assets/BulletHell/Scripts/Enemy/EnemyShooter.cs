@@ -57,7 +57,11 @@ public class EnemyShooter : MonoBehaviour
             _nextFindPlayerTime = Time.unscaledTime + 1f;
             _player = GameObject.FindWithTag("Player")?.transform;
             if (_player == null)
+            {
+                Debug.LogWarning("EnemyShooter: No Player Found!");
                 return;
+            }
+                
         }
 
         if (BulletManager.Instance == null)

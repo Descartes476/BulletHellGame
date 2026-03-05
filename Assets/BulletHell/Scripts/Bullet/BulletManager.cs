@@ -64,6 +64,13 @@ public class BulletManager : MonoBehaviour
             {
                 activePlayerBullets.RemoveAt(i);
                 playerBulletPool.Return(bullet.gameObject);
+                continue;
+            }
+
+            if (TryHitEnemy(bullet))
+            {
+                activePlayerBullets.RemoveAt(i);
+                playerBulletPool.Return(bullet.gameObject);
             }
         }
         for(int i = activeEnemyBullets.Count - 1; i >= 0; i--)
@@ -74,8 +81,77 @@ public class BulletManager : MonoBehaviour
             {
                 activeEnemyBullets.RemoveAt(i);
                 enemyBulletPool.Return(bullet.gameObject);
+                continue;
+            }
+
+            if(TryHitPlayer(bullet))
+            {
+                activeEnemyBullets.RemoveAt(i);
+                enemyBulletPool.Return(bullet.gameObject);
             }
         }
+    }
+
+    private static bool TryHitEnemy(Bullet bullet)
+    {
+        var enemies = EnemyBase.ActiveEnemies;
+        if (enemies == null || enemies.Count == 0)
+            return false;
+
+        Vector3 bulletPos3 = bullet.transform.position;
+        Vector2 bulletPos = new Vector2(bulletPos3.x, bulletPos3.y);
+        float bulletR = bullet.radius;
+
+        for (int i = 0; i < enemies.Count; i++)
+        {
+            var enemy = enemies[i];
+            if (enemy == null || !enemy.isActiveAndEnabled)
+                continue;
+
+            Vector3 enemyPos3 = enemy.transform.position;
+            Vector2 enemyPos = new Vector2(enemyPos3.x, enemyPos3.y);
+
+            float r = bulletR + enemy.HitRadius;
+            Vector2 d = enemyPos - bulletPos;
+            if (d.sqrMagnitude <= r * r)
+            {
+                enemy.TakeDamage(bullet.damage);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryHitPlayer(Bullet bullet)
+    {
+        var players = PlayerBase.ActivePlayers;
+        if (players == null || players.Count == 0)
+            return false;
+
+        Vector3 bulletPos3 = bullet.transform.position;
+        Vector2 bulletPos = new Vector2(bulletPos3.x, bulletPos3.y);
+        float bulletR = bullet.radius;
+
+        for (int i = 0; i < players.Count; i++)
+        {
+            var player = players[i];
+            if (player == null || !player.isActiveAndEnabled)
+                continue;
+
+            Vector3 playerPos3 = player.transform.position;
+            Vector2 playerPos = new Vector2(playerPos3.x, playerPos3.y);
+
+            float r = bulletR + player.HitRadius;
+            Vector2 d = playerPos - bulletPos;
+            if (d.sqrMagnitude <= r * r)
+            {
+                player.TakeDamage(bullet.damage);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
