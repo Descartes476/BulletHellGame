@@ -5,6 +5,7 @@ public class HUDController : MonoBehaviour
 {
     [SerializeField] private TMP_Text hpTxt;
     [SerializeField] private TMP_Text scoreTxt;
+    [SerializeField] private TMP_Text respawnTxt;
     [SerializeField] private GameObject gameOverPanel;
 
     void OnEnable()
@@ -13,6 +14,8 @@ public class HUDController : MonoBehaviour
         PlayerBase.OnPlayerHpChanged += HandlePlayerHpChanged;
         GameManager.OnScoreChanged += HandleScoreChanged;
         GameManager.OnGameOver += HandleGameOver;
+        GameManager.OnRespawnCountdownChanged += HandleRespawnCountdownChanged;
+        GameManager.OnPlayerRespawned += HandlePlayerRespawned;
 
         RefreshInitialView();
     }
@@ -23,6 +26,8 @@ public class HUDController : MonoBehaviour
         PlayerBase.OnPlayerHpChanged -= HandlePlayerHpChanged;
         GameManager.OnScoreChanged -= HandleScoreChanged;
         GameManager.OnGameOver -= HandleGameOver;
+        GameManager.OnRespawnCountdownChanged -= HandleRespawnCountdownChanged;
+        GameManager.OnPlayerRespawned -= HandlePlayerRespawned;
     }
 
     private void RefreshInitialView()
@@ -35,6 +40,14 @@ public class HUDController : MonoBehaviour
 
         if (gameOverPanel != null)
             gameOverPanel.SetActive(GameManager.Instance != null && GameManager.Instance.IsGameOver);
+
+        if (respawnTxt != null)
+        {
+            if (GameManager.Instance != null && GameManager.Instance.IsRespawning)
+                respawnTxt.text = $"Revive In: {Mathf.CeilToInt(GameManager.Instance.RespawnCountdown)}";
+            else
+                respawnTxt.text = string.Empty;
+        }
     }
 
     private void HandlePlayerSpawned(PlayerBase player)
@@ -57,6 +70,24 @@ public class HUDController : MonoBehaviour
     {
         if (gameOverPanel != null)
             gameOverPanel.SetActive(true);
+    }
+
+    private void HandleRespawnCountdownChanged(float countdown)
+    {
+        if (respawnTxt == null)
+            return;
+
+        if (countdown > 0f)
+            respawnTxt.text = $"Revive In: {Mathf.CeilToInt(countdown)}";
+        else
+            respawnTxt.text = string.Empty;
+    }
+
+    private void HandlePlayerRespawned(PlayerBase player)
+    {
+        SetHpText(player);
+        if (respawnTxt != null)
+            respawnTxt.text = string.Empty;
     }
 
     private void SetHpText(PlayerBase player)
