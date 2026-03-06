@@ -3,8 +3,8 @@ using UnityEngine;
 
 public class EnemyShooter : MonoBehaviour
 {
-    [SerializeField] private float fireInterval = 0.5f; //最短射击间隔
-    [SerializeField] private float bulletSpeed = 5f;
+    [SerializeField] private float fireInterval = 1f; //最短射击间隔
+    [SerializeField] private float bulletSpeed = 2f;
     [SerializeField] private float bulletLifeTime = 30f;
     [SerializeField] private float bulletDamage = 1f;
     [SerializeField] private List<EnemyShootPattern> shootPatterns; // 可用的射击模式

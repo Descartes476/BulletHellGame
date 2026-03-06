@@ -15,6 +15,8 @@ public class EnemyBase : MonoBehaviour
 
     public float HitRadius => hitRadius;
 
+    public static event System.Action<EnemyBase> OnEnemyDied;
+
     void OnEnable()
     {
         _currentHp = hp;
@@ -30,9 +32,16 @@ public class EnemyBase : MonoBehaviour
 
     public void TakeDamage(float dmg)
     {
+        if (dmg <= 0f || _currentHp <= 0f)
+            return;
+
         _currentHp -= dmg;
+        if (_currentHp < 0f)
+            _currentHp = 0f;
+
         if (_currentHp <= 0f)
         {
+            OnEnemyDied?.Invoke(this);
             gameObject.SetActive(false);
         }
     }

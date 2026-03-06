@@ -112,8 +112,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2bfb5ed2e7c9d024faca9ce6fc32a1af, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  fireInterval: 0.5
-  bulletSpeed: 5
+  fireInterval: 1
+  bulletSpeed: 2
   bulletLifeTime: 30
   bulletDamage: 1
   shootPatterns:
