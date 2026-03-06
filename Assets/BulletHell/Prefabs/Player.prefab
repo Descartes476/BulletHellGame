@@ -116,5 +116,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e59299dcc46d40f46a9f480f231428bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  hp: 100
+  hp: 10
   hitRadius: 0.5
+  respawnInvincibleDuration: 2

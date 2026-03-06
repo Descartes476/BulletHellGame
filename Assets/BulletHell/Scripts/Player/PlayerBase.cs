@@ -1,14 +1,32 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+// 管理玩家的生命值、出生点、死亡/复活，以及复活后的短暂无敌表现。
 public class PlayerBase : MonoBehaviour
 {
 
+    // 玩家最大生命值；重新启用或复活时会据此重置当前血量。
     [SerializeField] private float hp = 100f;
+    // 用于子弹命中检测的近似圆形半径。
     [SerializeField] private float hitRadius = 0.5f;
+    // 复活后持续多久不受伤害。
+    [SerializeField] private float respawnInvincibleDuration = 2f;
+    // 无敌闪烁时允许的最低透明度。
+    [SerializeField] private float invincibleBlinkMinAlpha = 0.35f;
+    // 无敌闪烁的频率控制值。
+    [SerializeField] private float invincibleBlinkSpeed = 10f;
+    // 当前实际生命值。
     private float _currentHp;
+    // 记录出生/复活位置。
     private Vector3 _spawnPosition;
+    // 标记是否已经缓存过出生点，避免重复覆盖。
     private bool _hasSpawnPosition;
+    // 剩余无敌时间；大于 0 时玩家不会受伤。
+    private float _invincibleTimer;
+    // 缓存所有需要做闪烁表现的精灵渲染器。
+    private SpriteRenderer[] _spriteRenderers;
+    // 缓存原始颜色，用于在闪烁时只修改透明度并可恢复。
+    private Color[] _originalColors;
     private static readonly List<PlayerBase> activePlayersInternal = new List<PlayerBase>();   // 玩家注册表
     public static IReadOnlyList<PlayerBase> ActivePlayers => activePlayersInternal;
     public float HitRadius => hitRadius;
@@ -16,6 +34,7 @@ public class PlayerBase : MonoBehaviour
     public float MaxHp => hp;
     public bool IsDead => _currentHp <= 0;
     public Vector3 SpawnPosition => _spawnPosition;
+    public bool IsInvincible => _invincibleTimer > 0f;
 
     // 玩家事件
     public static event System.Action<PlayerBase> OnPlayerDied;
@@ -23,9 +42,10 @@ public class PlayerBase : MonoBehaviour
     public static event System.Action<PlayerBase> OnPlayerHpChanged;
 
 
+    // 统一处理玩家受伤入口；死亡时只负责广播事件并隐藏对象，复活由 GameManager 统一调度。
     public void TakeDamage(float damage)
     {
-        if (damage <= 0f || IsDead)
+        if (damage <= 0f || IsDead || IsInvincible)
             return;
 
         _currentHp -= damage;
@@ -44,6 +64,16 @@ public class PlayerBase : MonoBehaviour
     {
         transform.position = _spawnPosition;
         gameObject.SetActive(true);
+        // 复活后的短暂无敌既防止落地立刻再次受击，也驱动闪烁表现。
+        _invincibleTimer = respawnInvincibleDuration;
+    }
+
+    private void Update()
+    {
+        if (_invincibleTimer > 0f)
+            _invincibleTimer -= Time.deltaTime;
+
+        UpdateInvincibleVisual();
     }
 
     private void OnDisable()
@@ -53,6 +83,13 @@ public class PlayerBase : MonoBehaviour
 
     private void Awake()
     {
+        _spriteRenderers = GetComponentsInChildren<SpriteRenderer>(true);
+        _originalColors = new Color[_spriteRenderers.Length];
+        for (int i = 0; i < _spriteRenderers.Length; i++)
+        {
+            _originalColors[i] = _spriteRenderers[i].color;
+        }
+
         if (!_hasSpawnPosition)
         {
             _spawnPosition = transform.position;
@@ -68,12 +105,38 @@ public class PlayerBase : MonoBehaviour
             _hasSpawnPosition = true;
         }
 
+        // 重新启用时视为一次新的可交互玩家实体，需要重置血量并重新注册到活动列表。
         _currentHp = hp;
         if(!activePlayersInternal.Contains(this))
         {
             activePlayersInternal.Add(this);
         }
         OnPlayerSpawned?.Invoke(this);
+    }
+
+    // 通过透明度闪烁反馈无敌状态，不修改对象开关，避免影响碰撞和事件订阅。
+    private void UpdateInvincibleVisual()
+    {
+        if (_spriteRenderers == null || _originalColors == null)
+            return;
+
+        float alpha = 1f;
+        if (IsInvincible)
+        {
+            float t = Mathf.PingPong(Time.time * invincibleBlinkSpeed, 1f);
+            alpha = Mathf.Lerp(invincibleBlinkMinAlpha, 1f, t);
+        }
+
+        for (int i = 0; i < _spriteRenderers.Length; i++)
+        {
+            var renderer = _spriteRenderers[i];
+            if (renderer == null)
+                continue;
+
+            Color color = _originalColors[i];
+            color.a = alpha;
+            renderer.color = color;
+        }
     }
 
 }

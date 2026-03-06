@@ -524,6 +524,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aca27eb4588a2994691b937db78adf40, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  respawnDelay: 3
 --- !u!4 &912282219
 Transform:
   m_ObjectHideFlags: 0
@@ -786,6 +787,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   hpTxt: {fileID: 1977306437}
   scoreTxt: {fileID: 248483745}
+  respawnTxt: {fileID: 0}
   gameOverPanel: {fileID: 1651636589}
 --- !u!114 &1917080573
 MonoBehaviour:
@@ -1060,7 +1062,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7125776180133812769, guid: 996016ed9a572df41b3298a0ee819dd3, type: 3}
       propertyPath: hp
-      value: 100
+      value: 10
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

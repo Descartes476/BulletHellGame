@@ -6,6 +6,7 @@ public enum BulletFaction
     Enemy = 1,
 }
 
+// 负责子弹对象池、逐帧更新，以及玩家/敌人两套子弹的命中检测与回收。
 public class BulletManager : MonoBehaviour
 {
     public static BulletManager Instance { get; private set; }
@@ -56,6 +57,7 @@ public class BulletManager : MonoBehaviour
     void Update()
     {
         float deltaTime = Time.deltaTime;
+        // 逆序遍历，便于在命中或过期后直接从活动列表中移除并回收。
         for(int i = activePlayerBullets.Count - 1; i >= 0; i--)
         {
             var bullet = activePlayerBullets[i];
@@ -92,6 +94,7 @@ public class BulletManager : MonoBehaviour
         }
     }
 
+    // 使用简单圆形近似做命中检测，避免为弹幕数量较多的场景引入额外 Physics 开销。
     private static bool TryHitEnemy(Bullet bullet)
     {
         var enemies = EnemyBase.ActiveEnemies;
@@ -155,7 +158,7 @@ public class BulletManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 生成一颗敌方子弹
+    /// 从对应阵营的对象池取出子弹并注册到活动列表，后续由 Update 统一驱动移动、命中和回收。
     /// </summary>
     /// <param name="position">生成位置（Vector2）</param>
     /// <param name="direction">发射方向（建议传入单位向量；若非单位向量，内部应自行归一化）</param>
