@@ -1,4 +1,5 @@
 using UnityEngine;
+using BulletHell.Simulation.Core;
 
 public class PlayerController : MonoBehaviour
 {
@@ -14,12 +15,14 @@ public class PlayerController : MonoBehaviour
 
     private Camera _cam;
     private float _fireTimer;
+    private int _inputTick;
 
     // Start is called before the first frame update
     void Start()
     {
         _cam = Camera.main;
         _fireTimer = fireInterval;
+        _inputTick = 0;
     }
 
     // Update is called once per frame
@@ -30,14 +33,16 @@ public class PlayerController : MonoBehaviour
 
         float dt = Time.deltaTime;
 
-        TickMove(dt);
-        TickShoot(dt);
+        InputFrame inputFrame = SampleCurrentInputFrame();
+        TickMove(dt, inputFrame);
+        TickShoot(dt, inputFrame);
+        _inputTick++;
     }
 
-    private void TickMove(float dt)
+    private void TickMove(float dt, InputFrame inputFrame)
     {
-        float h = Input.GetAxisRaw("Horizontal");
-        float v = Input.GetAxisRaw("Vertical");
+        float h = inputFrame.MoveX;
+        float v = inputFrame.MoveY;
 
         // 归一化，防止斜角方向移动速度过快
         Vector2 input = new Vector2(h, v);
@@ -51,26 +56,28 @@ public class PlayerController : MonoBehaviour
         transform.position = ClampToScreen(pos);
     }
 
-    private void TickShoot(float dt)
+    private void TickShoot(float dt, InputFrame inputFrame)
     {
         _fireTimer += dt; // 累加时间
 
-        if (!Input.GetMouseButton(0))
+        if (!inputFrame.FirePressed)
             return;
 
         float interval = fireInterval <= 0f ? 0f : fireInterval; // 防止间隔为0
         if (_fireTimer < interval)
             return;
 
-        Vector2 dir = GetAimDirection();
+        Vector2 dir = new Vector2(inputFrame.AimX / 1000f, inputFrame.AimY / 1000f);
+        if (dir.sqrMagnitude > 1f)
+            dir.Normalize();
+
         if (dir.sqrMagnitude < 0.0001f)
             return;
-        
+
         _fireTimer = 0f;
 
         if (BulletManager.Instance == null)
         {
-            Debug.LogWarning("BulletManager.Instance is null. Please add BulletManager to scene.");
             return;
         }
 
@@ -84,17 +91,11 @@ public class PlayerController : MonoBehaviour
         );
     }
 
-    private Vector2 GetAimDirection()
+    private Vector3 ScreenToWorldPoint(Vector3 mouse)
     {
-        if (_cam == null)
-            return Vector2.zero;
-
-        Vector3 mouse = Input.mousePosition;
         float screenToWorldZ = _cam.orthographic ? 0f : Mathf.Abs(_cam.transform.position.z);
-        Vector3 world = _cam.ScreenToWorldPoint(new Vector3(mouse.x, mouse.y, screenToWorldZ));
-        Vector2 from = new Vector2(transform.position.x, transform.position.y);
-        Vector2 to = new Vector2(world.x, world.y);
-        return to - from;
+        Vector3 worldPoint = _cam.ScreenToWorldPoint(new Vector3(mouse.x, mouse.y, screenToWorldZ));
+        return worldPoint;
     }
 
     private Vector3 ClampToScreen(Vector3 pos)
@@ -125,5 +126,22 @@ public class PlayerController : MonoBehaviour
         Vector3 clamped = _cam.ViewportToWorldPoint(v);
         clamped.z = 0f;
         return clamped;
+    }
+
+    private InputFrame SampleCurrentInputFrame()
+    {
+        sbyte moveX = (sbyte)Mathf.Clamp(Input.GetAxisRaw("Horizontal"), -1f, 1f);
+        sbyte moveY = (sbyte)Mathf.Clamp(Input.GetAxisRaw("Vertical"), -1f, 1f);
+        bool firePressed = Input.GetMouseButton(0);
+        short aimX = 0, aimY = 0;
+        
+        Vector3 direction = ScreenToWorldPoint(Input.mousePosition) - transform.position;
+        if(direction.sqrMagnitude > 0.0001f)
+        {
+            Vector3 normalizeDir = direction.normalized;
+            aimX = (short)(normalizeDir.x * 1000);
+            aimY = (short)(normalizeDir.y * 1000);
+        }
+        return new InputFrame(_inputTick, moveX, moveY, aimX, aimY, firePressed);
     }
 }

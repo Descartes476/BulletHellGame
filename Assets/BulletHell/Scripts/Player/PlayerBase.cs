@@ -123,10 +123,9 @@ public class PlayerBase : MonoBehaviour
         float alpha = 1f;
         if (IsInvincible)
         {
-            float t = Mathf.PingPong(Time.time * invincibleBlinkSpeed, 1f);
-            alpha = Mathf.Lerp(invincibleBlinkMinAlpha, 1f, t);
+            float t = Mathf.PingPong(Time.time * invincibleBlinkSpeed, 1f); // PingPong返回0到1再回到0
+            alpha = Mathf.Lerp(invincibleBlinkMinAlpha, 1f, t);  // 从最小alpha渐变到完全可见
         }
-
         for (int i = 0; i < _spriteRenderers.Length; i++)
         {
             var renderer = _spriteRenderers[i];
