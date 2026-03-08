@@ -11,8 +11,6 @@ public class BulletManager : MonoBehaviour
 {
     public static BulletManager Instance { get; private set; }
 
-    
-
     [Header("Prefabs")]
     public GameObject playerBulletPrefab;
     public GameObject enemyBulletPrefab;

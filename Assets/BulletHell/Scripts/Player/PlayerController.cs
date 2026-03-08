@@ -3,6 +3,9 @@ using BulletHell.Simulation.Core;
 
 public class PlayerController : MonoBehaviour
 {
+    [Header("Simulation")]
+    [SerializeField] private bool simulationDriven;
+
     [Header("Movement")]
     [SerializeField] private float moveSpeed = 8f; // 移动速度
     [SerializeField] private float screenPadding = 0.2f; // 屏幕边界padding
@@ -28,6 +31,9 @@ public class PlayerController : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        if (simulationDriven)
+            return;
+
         if (_cam == null)
             _cam = Camera.main;
 
@@ -37,6 +43,11 @@ public class PlayerController : MonoBehaviour
         TickMove(dt, inputFrame);
         TickShoot(dt, inputFrame);
         _inputTick++;
+    }
+
+    public void SetSimulationDriven(bool isSimulationDriven)
+    {
+        simulationDriven = isSimulationDriven;
     }
 
     private void TickMove(float dt, InputFrame inputFrame)
@@ -128,20 +139,37 @@ public class PlayerController : MonoBehaviour
         return clamped;
     }
 
+    public InputFrame SampleCurrentInputFrame(int tick)
+    {
+        if (_cam == null)
+            _cam = Camera.main;
+
+        sbyte moveX = (sbyte)Mathf.RoundToInt(Mathf.Clamp(Input.GetAxisRaw("Horizontal"), -1f, 1f));
+        sbyte moveY = (sbyte)Mathf.RoundToInt(Mathf.Clamp(Input.GetAxisRaw("Vertical"), -1f, 1f));
+        bool firePressed = Input.GetMouseButton(0);
+
+        short aimX = 0;
+        short aimY = 0;
+
+        if (_cam != null)
+        {
+            Vector3 mousePos = Input.mousePosition;
+            Vector3 worldMouse = ScreenToWorldPoint(mousePos);
+            Vector3 direction = worldMouse - transform.position;
+
+            if (direction.sqrMagnitude > 0.0001f)
+            {
+                Vector3 normalizedDir = direction.normalized;
+                aimX = (short)(normalizedDir.x * 1000f);
+                aimY = (short)(normalizedDir.y * 1000f);
+            }
+        }
+
+        return new InputFrame(tick, moveX, moveY, aimX, aimY, firePressed);
+    }
+
     private InputFrame SampleCurrentInputFrame()
     {
-        sbyte moveX = (sbyte)Mathf.Clamp(Input.GetAxisRaw("Horizontal"), -1f, 1f);
-        sbyte moveY = (sbyte)Mathf.Clamp(Input.GetAxisRaw("Vertical"), -1f, 1f);
-        bool firePressed = Input.GetMouseButton(0);
-        short aimX = 0, aimY = 0;
-        
-        Vector3 direction = ScreenToWorldPoint(Input.mousePosition) - transform.position;
-        if(direction.sqrMagnitude > 0.0001f)
-        {
-            Vector3 normalizeDir = direction.normalized;
-            aimX = (short)(normalizeDir.x * 1000);
-            aimY = (short)(normalizeDir.y * 1000);
-        }
-        return new InputFrame(_inputTick, moveX, moveY, aimX, aimY, firePressed);
+        return SampleCurrentInputFrame(_inputTick);
     }
 }
