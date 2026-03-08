@@ -6,7 +6,7 @@
 // 
 // 
 //
-
+# define _CLIENTLOGIC_
 using System;
 using System.IO;
 

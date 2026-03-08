@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using BulletHell.Simulation.Core;
 
@@ -44,7 +42,7 @@ public class SimulationDriver : MonoBehaviour
         Vector3 initialPosition = playerController.transform.position;
         PlayerSimState initialPlayer = new PlayerSimState(
             1,
-            new FixVector2((Fix64)initialPosition.x, (Fix64)initialPosition.y),
+            new FixVector3((Fix64)initialPosition.x, (Fix64)initialPosition.y, (Fix64)initialPosition.z),
             new FixVector2(Fix64.Zero, Fix64.One),
             (Fix64)1,
             true,
@@ -65,17 +63,29 @@ public class SimulationDriver : MonoBehaviour
 
         while (_accumulator >= tickInterval)
         {
+            #region Tick步进前，获取必要的状态
             InputFrame inputFrame = playerController.SampleCurrentInputFrame(_worldTick);
-            _currentWorld = WorldSimulator.Step(_currentWorld, inputFrame);
+            bool shouldFire = PlayerSimulator.ShouldFire(_currentWorld.Player, inputFrame);
+            #endregion
+
+            #region Tick步进
+            WorldSnapshot nextWorld = WorldSimulator.Step(_currentWorld, inputFrame);
+            if (shouldFire)
+            {
+                PlayerSimState nextPlayerState = nextWorld.Player;
+                if (BulletManager.Instance != null)
+                {
+                    BulletManager.Instance.SpawnBullet(nextPlayerState.Position.ToVector3(), nextPlayerState.AimDirection.ToVector2(), (float)config.PlayerBulletSpeed, (float)config.PlayerBulletDamage, config.PlayerBulletLifetimeTicks * tickInterval, BulletFaction.Player);
+                }
+            }
+            _currentWorld = nextWorld;
             _worldTick = _currentWorld.Tick;
+            #endregion
+
             _accumulator -= tickInterval;
         }
 
-        FixVector2 simulatedPosition = _currentWorld.Player.Position;
-        Vector3 playerPosition = playerController.transform.position;
-        playerPosition.x = (float)simulatedPosition.x;
-        playerPosition.y = (float)simulatedPosition.y;
-        playerPosition.z = 0f;
-        playerController.transform.position = playerPosition;
+        FixVector3 simulatedPosition = _currentWorld.Player.Position;
+        playerController.transform.position = simulatedPosition.ToVector3();
     }
 }

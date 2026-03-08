@@ -1,8 +1,31 @@
 namespace BulletHell.Simulation.Core
+
 {
+
     public static class PlayerSimulator
+
     {
-        public static PlayerSimState Step(in PlayerSimState currentState, in InputFrame inputFrame, in SimulationConfig config)
+        public static bool ShouldFire(PlayerSimState currentPlayerState, InputFrame inputFrame)
+        {
+            bool IsAlive = currentPlayerState.IsAlive;
+            if(!IsAlive)
+            {
+                return false;
+            }
+            //冷却时间
+            if(currentPlayerState.FireCooldownTicks > 0)
+            {
+                return false;
+            }
+            //瞄准方向
+            if(inputFrame.AimX == 0 && inputFrame.AimY == 0 && currentPlayerState.AimDirection == FixVector2.Zero)
+            {
+                return false;
+            }
+            return inputFrame.FirePressed;
+        }
+
+        public static PlayerSimState Step(in PlayerSimState currentPlayerState, in InputFrame inputFrame, in SimulationConfig config)
         {
             // 瞄准方向
             Fix64 aimX = (Fix64)inputFrame.AimX/1000;
@@ -10,7 +33,7 @@ namespace BulletHell.Simulation.Core
             FixVector2 aimDirection = new FixVector2(aimX, aimY);
             if(aimX == Fix64.Zero && aimY == Fix64.Zero)
             {
-                aimDirection = currentState.AimDirection;
+                aimDirection = currentPlayerState.AimDirection;
             }
             FixVector2 moveInput = new FixVector2(inputFrame.MoveX, inputFrame.MoveY);
             if(moveInput != FixVector2.Zero)
@@ -19,9 +42,9 @@ namespace BulletHell.Simulation.Core
             }
 
             // 位置变化
-            FixVector2 deltaMove = moveInput * config.PlayerMoveSpeed * config.TickDeltaTime;
-            FixVector2 nextPosition = currentState.Position + deltaMove;
-            
+            FixVector3 deltaMove = new FixVector3(moveInput.x, moveInput.y, Fix64.Zero) * config.PlayerMoveSpeed * config.TickDeltaTime;
+            FixVector3 nextPosition = currentPlayerState.Position + deltaMove;
+
             //限制玩家位置
             Fix64 clampedX = nextPosition.x;
             if (clampedX < config.PlayAreaMin.x) clampedX = config.PlayAreaMin.x;
@@ -29,25 +52,31 @@ namespace BulletHell.Simulation.Core
             Fix64 clampedY = nextPosition.y;
             if (clampedY < config.PlayAreaMin.y) clampedY = config.PlayAreaMin.y;
             if (clampedY > config.PlayAreaMax.y) clampedY = config.PlayAreaMax.y;
-            nextPosition = new FixVector2(clampedX, clampedY);
-
-            int nextCooldown = currentState.FireCooldownTicks > 0
-                ? currentState.FireCooldownTicks - 1
-                : 0;
+            nextPosition = new FixVector3(clampedX, clampedY, currentPlayerState.Position.z);
 
             
-
+            int nextCooldown = currentPlayerState.FireCooldownTicks > 0
+                ? currentPlayerState.FireCooldownTicks - 1
+                : 0;
+            if(ShouldFire(currentPlayerState, inputFrame))
+            {
+                nextCooldown = config.PlayerFireIntervalTicks;
+            }
             return new PlayerSimState(
-                currentState.EntityId,
+                currentPlayerState.EntityId,
                 nextPosition,
                 aimDirection,
-                currentState.Hp,
-                currentState.IsAlive,
+                currentPlayerState.Hp,
+                currentPlayerState.IsAlive,
                 nextCooldown,
-                currentState.RespawnCountdownTicks,
-                currentState.InvincibleTicks
+                currentPlayerState.RespawnCountdownTicks,
+                currentPlayerState.InvincibleTicks
             );
+
         }
+
     }
+
+
 
 }
