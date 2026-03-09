@@ -6,11 +6,14 @@ namespace BulletHell.Simulation.Core
         public SimulationConfig Config { get; }
         public PlayerSimState Player { get; }
 
-        public WorldSnapshot(int tick, SimulationConfig config, PlayerSimState player)
+        public BulletSimState[] Bullets { get; }
+
+        public WorldSnapshot(int tick, SimulationConfig config, PlayerSimState player, BulletSimState[] bullets)
         {
             Tick = tick;
             Config = config;
             Player = player;
+            Bullets = bullets == null ? new BulletSimState[0] : (BulletSimState[])bullets.Clone();
         }
     }
 }

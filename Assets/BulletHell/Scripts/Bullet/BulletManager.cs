@@ -56,23 +56,6 @@ public class BulletManager : MonoBehaviour
     {
         float deltaTime = Time.deltaTime;
         // 逆序遍历，便于在命中或过期后直接从活动列表中移除并回收。
-        for(int i = activePlayerBullets.Count - 1; i >= 0; i--)
-        {
-            var bullet = activePlayerBullets[i];
-            bool alive = bullet.Tick(deltaTime);
-            if (!alive)
-            {
-                activePlayerBullets.RemoveAt(i);
-                playerBulletPool.Return(bullet.gameObject);
-                continue;
-            }
-
-            if (TryHitEnemy(bullet))
-            {
-                activePlayerBullets.RemoveAt(i);
-                playerBulletPool.Return(bullet.gameObject);
-            }
-        }
         for(int i = activeEnemyBullets.Count - 1; i >= 0; i--)
         {
             var bullet = activeEnemyBullets[i];
