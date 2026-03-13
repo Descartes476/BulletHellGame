@@ -55,7 +55,7 @@ public class SimulationDriver : MonoBehaviour
             0,
             0,
             0);
-        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0]);
+        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], new EnemySimState[0]);
     }
 
     // Update is called once per frame
@@ -76,26 +76,12 @@ public class SimulationDriver : MonoBehaviour
 
             #region Tick步进
             WorldSnapshot nextWorld = WorldSimulator.Step(_currentWorld, inputFrame);
-            if(shouldFire)
+            if(shouldFire)  // 生成新子弹
             {
                 int bulletEntityID = _nextBulletEntityID++;
                 FixVector3 bulletPosition = nextWorld.Player.Position;
-                FixVector2 bulletDirection = nextWorld.Player.AimDirection;
-                // 如果当前子弹方向是零向量或者极小向量时，使用上一帧的朝向
-                if (FixVector2.SqrMagnitude(bulletDirection) < (Fix64)0.01)
-                {
-                    bulletDirection = _currentWorld.Player.AimDirection;
-                }
-
-                if (FixVector2.SqrMagnitude(bulletDirection) < (Fix64)0.01)
-                {
-                    bulletDirection = new FixVector2(Fix64.Zero, Fix64.One);
-                }
-
-                if (FixVector2.SqrMagnitude(bulletDirection) >= (Fix64)0.01)
-                {
-                    bulletDirection.Normalize();
-                }
+                FixVector2 fallbackDirection = _currentWorld.Player.AimDirection.GetNormalizedOr(new FixVector2(Fix64.Zero, Fix64.One));
+                FixVector2 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
 
                 BulletSimState bullet = new BulletSimState(
                     bulletEntityID,
@@ -111,8 +97,9 @@ public class SimulationDriver : MonoBehaviour
                 BulletSimState[] newBullets = new BulletSimState[nextWorldBullets.Length + 1];
                 Array.Copy(nextWorldBullets, newBullets, nextWorldBullets.Length);
                 newBullets[nextWorldBullets.Length] = bullet;
-                nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Player, newBullets);
+                nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Player, newBullets, nextWorld.Enemies);
             }
+            nextWorld = ResolvePlayerBulletHits(nextWorld);
             _currentWorld = nextWorld;
             _worldTick = _currentWorld.Tick;
             #endregion
@@ -178,5 +165,58 @@ public class SimulationDriver : MonoBehaviour
             _bulletViews.Remove(id);
         }
         
+    }
+
+    private WorldSnapshot ResolvePlayerBulletHits(WorldSnapshot world)
+    {
+        var bulletSims = world.Bullets;
+        List<BulletSimState> bulletsNotHit = new List<BulletSimState>();
+        for(int i = 0; i < bulletSims.Length; i++)
+        {
+            BulletSimState bullet = bulletSims[i];
+            if(!TryHitEnemy(bullet))
+            {
+                bulletsNotHit.Add(bullet);
+            }
+        }
+        WorldSnapshot worldSnapshot = new WorldSnapshot
+        (
+            world.Tick,
+            world.Config,
+            world.Player,
+            bulletsNotHit.ToArray(),
+            world.Enemies
+        );
+        return worldSnapshot;
+    }
+
+    private static bool TryHitEnemy(BulletSimState bullet)
+    {
+        var enemies = EnemyBase.ActiveEnemies;
+        if (enemies == null || enemies.Count == 0)
+            return false;
+
+        FixVector3 bulletPos3 = bullet.Position;
+        FixVector2 bulletPos = new FixVector2(bulletPos3.x, bulletPos3.y);
+        Fix64 bulletR = bullet.Radius;
+
+        for (int i = 0; i < enemies.Count; i++)
+        {
+            var enemy = enemies[i];
+            if (enemy == null || !enemy.isActiveAndEnabled)
+                continue;
+
+            Vector3 enemyPos3 = enemy.transform.position;
+            FixVector2 enemyPos = new FixVector2((Fix64)enemyPos3.x, (Fix64)enemyPos3.y);
+
+            Fix64 r = bulletR + enemy.HitRadius;
+            FixVector2 d = enemyPos - bulletPos;
+            if (FixVector2.SqrMagnitude(d) <= r * r)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

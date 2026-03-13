@@ -801,11 +801,35 @@ public struct FixVector2
         y *= n;
     }
 
+    public bool TryNormalize(Fix64 epsilon = default(Fix64))
+    {
+        Fix64 resolvedEpsilon = epsilon == Fix64.Zero ? (Fix64)0.0001 : epsilon;
+        Fix64 sqrMagnitude = x * x + y * y;
+        Fix64 epsilonSqr = resolvedEpsilon * resolvedEpsilon;
+        if (sqrMagnitude < epsilonSqr)
+            return false;
+
+        Fix64 magnitude = Fix64.Sqrt(sqrMagnitude);
+        if (magnitude == Fix64.Zero)
+            return false;
+
+        Fix64 invMagnitude = Fix64.One / magnitude;
+        x *= invMagnitude;
+        y *= invMagnitude;
+        return true;
+    }
+
     public FixVector2 GetNormalized()
     {
         FixVector2 v = new FixVector2(this);
         v.Normalize();
         return v;
+    }
+
+    public FixVector2 GetNormalizedOr(FixVector2 fallback, Fix64 epsilon = default(Fix64))
+    {
+        FixVector2 v = new FixVector2(this);
+        return v.TryNormalize(epsilon) ? v : fallback;
     }
 
     public override string ToString()

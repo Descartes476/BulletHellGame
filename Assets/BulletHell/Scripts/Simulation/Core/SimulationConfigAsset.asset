@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: SimulationConfigAsset
   m_EditorClassIdentifier: 
   tickRate: 60
-  playerMoveSpeed: 80
+  playerMoveSpeed: 8
   playerFireIntervalTicks: 18
   playerBulletSpeed: 5
   playerBulletDamage: 1

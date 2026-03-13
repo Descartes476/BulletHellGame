@@ -25,8 +25,8 @@ namespace BulletHell.Simulation.Core
 
                 nextBullets.Add(nextBullet);
             }
-
-            return new WorldSnapshot(nextTick, currentWorld.Config, nextPlayerState, nextBullets.ToArray());
+            return new WorldSnapshot(nextTick, currentWorld.Config, nextPlayerState, nextBullets.ToArray(), currentWorld.Enemies);
         }
     }
 }
+

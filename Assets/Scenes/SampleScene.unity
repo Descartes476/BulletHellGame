@@ -622,7 +622,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enemyPrefab: {fileID: 3080250497105085159, guid: 20f132a8845c9eb499273d9691d62f6c, type: 3}
-  initialCount: 3
+  initialCount: 1
   spawnMin: {x: -6, y: 1}
   spawnMax: {x: 6, y: 4}
 --- !u!4 &911659661
