@@ -17,6 +17,7 @@ public class EnemyBase : MonoBehaviour
     public float MaxHp => hp;
     public float CurrentHp => _currentHp;
 
+    public static event System.Action OnEnemyDied;
 
     void OnEnable()
     {

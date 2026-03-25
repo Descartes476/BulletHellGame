@@ -72,40 +72,12 @@ public class SimulationDriver : MonoBehaviour
 
         while (_accumulator >= tickInterval)
         {
-            #region Tick步进前，获取必要的状态
-            InputFrame inputFrame = playerController.SampleCurrentInputFrame(_worldTick);
-            bool shouldFire = PlayerSimulator.ShouldFire(_currentWorld.Player, inputFrame);
-            #endregion
-
-            #region Tick步进
-            WorldSnapshot nextWorld = WorldSimulator.Step(_currentWorld, inputFrame);
-            if(shouldFire)  // 生成新子弹
-            {
-                int bulletEntityID = _nextBulletEntityID++;
-                FixVector3 bulletPosition = nextWorld.Player.Position;
-                FixVector2 fallbackDirection = _currentWorld.Player.AimDirection.GetNormalizedOr(new FixVector2(Fix64.Zero, Fix64.One));
-                FixVector2 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
-
-                BulletSimState bullet = new BulletSimState(
-                    bulletEntityID,
-                    bulletPosition,
-                    bulletDirection,
-                    config.PlayerBulletSpeed,
-                    config.PlayerBulletDamage,
-                    (Fix64)0.1f,
-                    config.PlayerBulletLifetimeTicks,
-                    BulletFaction.Player
-                );
-                var nextWorldBullets = nextWorld.Bullets;
-                BulletSimState[] newBullets = new BulletSimState[nextWorldBullets.Length + 1];
-                Array.Copy(nextWorldBullets, newBullets, nextWorldBullets.Length);
-                newBullets[nextWorldBullets.Length] = bullet;
-                nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Player, newBullets, nextWorld.Enemies);
-            }
+            //推进输入
+            WorldSnapshot nextWorld = ResolveInput(_currentWorld);
+            //推进玩家子弹
             nextWorld = ResolvePlayerBulletHits(nextWorld);
             _currentWorld = nextWorld;
             _worldTick = _currentWorld.Tick;
-            #endregion
 
             _accumulator -= tickInterval;
             ResolveEnemyDied();
@@ -118,6 +90,7 @@ public class SimulationDriver : MonoBehaviour
         SyncEnemyView(_currentWorld.Enemies);
     }
 
+    //触发敌人死亡事件
     private void ResolveEnemyDied()
     {
         foreach(var enemyId in _enemyDieInTick)
@@ -209,6 +182,37 @@ public class SimulationDriver : MonoBehaviour
         }
     }
 
+    private WorldSnapshot ResolveInput(WorldSnapshot world)
+    {
+        InputFrame inputFrame = playerController.SampleCurrentInputFrame(_worldTick);
+        bool shouldFire = PlayerSimulator.ShouldFire(world.Player, inputFrame);
+        WorldSnapshot nextWorld = WorldSimulator.Step(world, inputFrame);
+        if(shouldFire)  // 生成新子弹
+        {
+            int bulletEntityID = _nextBulletEntityID++;
+            FixVector3 bulletPosition = nextWorld.Player.Position;
+            FixVector2 fallbackDirection = world.Player.AimDirection.GetNormalizedOr(new FixVector2(Fix64.Zero, Fix64.One));
+            FixVector2 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
+
+            BulletSimState bullet = new BulletSimState(
+                bulletEntityID,
+                bulletPosition,
+                bulletDirection,
+                config.PlayerBulletSpeed,
+                config.PlayerBulletDamage,
+                (Fix64)0.1f,
+                config.PlayerBulletLifetimeTicks,
+                BulletFaction.Player
+            );
+            var nextWorldBullets = nextWorld.Bullets;
+            BulletSimState[] newBullets = new BulletSimState[nextWorldBullets.Length + 1];
+            Array.Copy(nextWorldBullets, newBullets, nextWorldBullets.Length);
+            newBullets[nextWorldBullets.Length] = bullet;
+            nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Player, newBullets, nextWorld.Enemies);
+        }
+        return nextWorld;
+    }
+
     private WorldSnapshot ResolvePlayerBulletHits(WorldSnapshot world)
     {
         var bulletSims = world.Bullets;
@@ -245,7 +249,7 @@ public class SimulationDriver : MonoBehaviour
             Vector3 pos = enemy.transform.position;
             FixVector3 fixPos = new FixVector3((Fix64)pos.x, (Fix64)pos.y, (Fix64)pos.z);
             int enemyEntityId = _nextEnemyEntityID;
-            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius);
+            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector2(1, 0), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, (Fix64)5.0);
             enemySimStates.Add(enemySimState);
             _enemyViews[enemyEntityId] = enemy;
             _nextEnemyEntityID++;
@@ -253,6 +257,7 @@ public class SimulationDriver : MonoBehaviour
         return enemySimStates.ToArray();
     }
 
+    //获取Transform路径，作为唯一标识
     private static string GetTransformPath(Transform current)
     {
         string path = current.name;
@@ -298,9 +303,11 @@ public class SimulationDriver : MonoBehaviour
                 enemies[i] = new EnemySimState(
                     enemy.EntityId,
                     enemy.Position,
+                    enemy.MoveDirection,
                     nextHp,
                     enemy.MaxHp,
-                    enemy.HitRadius
+                    enemy.HitRadius,
+                    enemy.Speed
                 );
                 return true;
             }
