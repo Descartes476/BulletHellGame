@@ -14,8 +14,9 @@ public class EnemyBase : MonoBehaviour
     public static System.Collections.Generic.IReadOnlyList<EnemyBase> ActiveEnemies => ActiveEnemiesInternal;
 
     public float HitRadius => hitRadius;
+    public float MaxHp => hp;
+    public float CurrentHp => _currentHp;
 
-    public static event System.Action<EnemyBase> OnEnemyDied;
 
     void OnEnable()
     {
@@ -41,7 +42,6 @@ public class EnemyBase : MonoBehaviour
 
         if (_currentHp <= 0f)
         {
-            OnEnemyDied?.Invoke(this);
             gameObject.SetActive(false);
         }
     }

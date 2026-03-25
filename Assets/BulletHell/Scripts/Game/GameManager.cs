@@ -27,6 +27,7 @@ public class GameManager : MonoBehaviour
     private float _respawnCountdown;
     // 记录本次等待复活的玩家对象，倒计时结束后对它调用 Respawn。
     private PlayerBase _pendingRespawnPlayer;
+    public static event System.Action<int> OnEnemyDied;
 
     // 这里只处理敌人死亡后的分数结算，不直接参与敌人销毁逻辑。
     void Awake()
@@ -45,7 +46,7 @@ public class GameManager : MonoBehaviour
         _pendingRespawnPlayer = null;
     }
 
-    private void HandleEnemyDied(EnemyBase enemy)
+    private void HandleEnemyDied(int enemyId)
     {
         Score += 10;
         OnScoreChanged?.Invoke(Score);
@@ -90,13 +91,19 @@ public class GameManager : MonoBehaviour
 
     void OnEnable()
     {
-        EnemyBase.OnEnemyDied += HandleEnemyDied;
+        OnEnemyDied += HandleEnemyDied;
         PlayerBase.OnPlayerDied += HandlePlayerDied;
     }
 
     void OnDisable()
     {
-        EnemyBase.OnEnemyDied -= HandleEnemyDied;
+        OnEnemyDied -= HandleEnemyDied;
         PlayerBase.OnPlayerDied -= HandlePlayerDied;
     }
+
+    public void TriggerEnemyDied(int entityId)
+    {
+        OnEnemyDied?.Invoke(entityId);
+    }
+
 }

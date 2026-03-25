@@ -14,8 +14,11 @@ public class SimulationDriver : MonoBehaviour
     private float _accumulator;
     private int _worldTick;
     private int _nextBulletEntityID = 1;
+    private int _nextEnemyEntityID = 1;
 
     private Dictionary<int, Bullet> _bulletViews = new Dictionary<int, Bullet>();
+    private Dictionary<int, EnemyBase> _enemyViews = new Dictionary<int, EnemyBase>();
+    private HashSet<int> _enemyDieInTick = new HashSet<int>();
 
     // Start is called before the first frame update
     void Start()
@@ -55,7 +58,7 @@ public class SimulationDriver : MonoBehaviour
             0,
             0,
             0);
-        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], new EnemySimState[0]);
+        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], GetEnemySimStates());
     }
 
     // Update is called once per frame
@@ -105,12 +108,26 @@ public class SimulationDriver : MonoBehaviour
             #endregion
 
             _accumulator -= tickInterval;
+            ResolveEnemyDied();
         }
 
         FixVector3 simulatedPosition = _currentWorld.Player.Position;
         playerController.transform.position = simulatedPosition.ToVector3();
         
         SynBulletsView(_currentWorld.Bullets);
+        SyncEnemyView(_currentWorld.Enemies);
+    }
+
+    private void ResolveEnemyDied()
+    {
+        foreach(var enemyId in _enemyDieInTick)
+        {
+            if(GameManager.Instance != null)
+            {
+                GameManager.Instance.TriggerEnemyDied(enemyId);
+            }
+        }
+        _enemyDieInTick.Clear();
     }
 
     private void SynBulletsView(BulletSimState[] bullets)
@@ -167,14 +184,40 @@ public class SimulationDriver : MonoBehaviour
         
     }
 
+    private void SyncEnemyView(EnemySimState[] enemies)
+    {
+        for(int i=0; i<enemies.Length; i++)
+        {
+            var enemy = enemies[i];
+            if(!_enemyViews.TryGetValue(enemy.EntityId, out EnemyBase enemyView))
+            {
+                continue;
+            }
+            if(enemyView == null)
+            {
+                continue;
+            }
+            if(!enemy.IsAlive)
+            {
+                if(enemyView.gameObject.activeSelf)
+                {
+                    enemyView.gameObject.SetActive(false);
+                }
+                continue;
+            }
+            enemyView.transform.position = enemy.Position.ToVector3();
+        }
+    }
+
     private WorldSnapshot ResolvePlayerBulletHits(WorldSnapshot world)
     {
         var bulletSims = world.Bullets;
+        var enemies = (EnemySimState[])world.Enemies.Clone();
         List<BulletSimState> bulletsNotHit = new List<BulletSimState>();
         for(int i = 0; i < bulletSims.Length; i++)
         {
             BulletSimState bullet = bulletSims[i];
-            if(!TryHitEnemy(bullet))
+            if (bullet.Faction != BulletFaction.Player || !TryHitEnemy(bullet, enemies))
             {
                 bulletsNotHit.Add(bullet);
             }
@@ -185,38 +228,85 @@ public class SimulationDriver : MonoBehaviour
             world.Config,
             world.Player,
             bulletsNotHit.ToArray(),
-            world.Enemies
+            enemies
         );
         return worldSnapshot;
     }
 
-    private static bool TryHitEnemy(BulletSimState bullet)
+    private EnemySimState[] GetEnemySimStates()
     {
-        var enemies = EnemyBase.ActiveEnemies;
-        if (enemies == null || enemies.Count == 0)
+        EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
+        Array.Sort(sceneEnemies, (a, b) => string.CompareOrdinal(GetTransformPath(a.transform), GetTransformPath(b.transform)));
+        List<EnemySimState> enemySimStates = new List<EnemySimState>();
+        _enemyViews.Clear();
+        for(int i=0; i<sceneEnemies.Length; i++)
+        {
+            EnemyBase enemy = sceneEnemies[i];
+            Vector3 pos = enemy.transform.position;
+            FixVector3 fixPos = new FixVector3((Fix64)pos.x, (Fix64)pos.y, (Fix64)pos.z);
+            int enemyEntityId = _nextEnemyEntityID;
+            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius);
+            enemySimStates.Add(enemySimState);
+            _enemyViews[enemyEntityId] = enemy;
+            _nextEnemyEntityID++;
+        }
+        return enemySimStates.ToArray();
+    }
+
+    private static string GetTransformPath(Transform current)
+    {
+        string path = current.name;
+        while (current.parent != null)
+        {
+            current = current.parent;
+            path = current.name + "/" + path;
+        }
+
+        return path;
+    }
+
+    private bool TryHitEnemy(BulletSimState bullet, EnemySimState[] enemies)
+    {
+        if (enemies == null || enemies.Length == 0)
             return false;
 
-        FixVector3 bulletPos3 = bullet.Position;
-        FixVector2 bulletPos = new FixVector2(bulletPos3.x, bulletPos3.y);
+        FixVector3 bulletPos = bullet.Position;
         Fix64 bulletR = bullet.Radius;
 
-        for (int i = 0; i < enemies.Count; i++)
+        for (int i = 0; i < enemies.Length; i++)
         {
             var enemy = enemies[i];
-            if (enemy == null || !enemy.isActiveAndEnabled)
+            if (!enemy.IsAlive)
+            {
                 continue;
+            }
 
-            Vector3 enemyPos3 = enemy.transform.position;
-            FixVector2 enemyPos = new FixVector2((Fix64)enemyPos3.x, (Fix64)enemyPos3.y);
+            FixVector3 enemyPos = enemy.Position;
 
             Fix64 r = bulletR + enemy.HitRadius;
-            FixVector2 d = enemyPos - bulletPos;
-            if (FixVector2.SqrMagnitude(d) <= r * r)
+            FixVector3 d = enemyPos - bulletPos;
+            FixVector2 dInPanel = new FixVector2(d.x, d.y);
+            if (FixVector2.SqrMagnitude(dInPanel) <= r * r)
             {
+                var nextHp = enemy.Hp;
+                nextHp -= bullet.Damage;
+                if(nextHp <= Fix64.Zero)
+                {
+                    nextHp = Fix64.Zero;
+                    _enemyDieInTick.Add(enemy.EntityId);
+                }
+                enemies[i] = new EnemySimState(
+                    enemy.EntityId,
+                    enemy.Position,
+                    nextHp,
+                    enemy.MaxHp,
+                    enemy.HitRadius
+                );
                 return true;
             }
         }
 
         return false;
     }
+
 }
