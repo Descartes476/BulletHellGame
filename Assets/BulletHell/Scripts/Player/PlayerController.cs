@@ -78,7 +78,7 @@ public class PlayerController : MonoBehaviour
         if (_fireTimer < interval)
             return;
 
-        Vector2 dir = new Vector2(inputFrame.AimX / 1000f, inputFrame.AimY / 1000f);
+        Vector3 dir = new Vector3(inputFrame.AimX / 1000f, inputFrame.AimY / 1000f, 0f);
         if (dir.sqrMagnitude > 1f)
             dir.Normalize();
 

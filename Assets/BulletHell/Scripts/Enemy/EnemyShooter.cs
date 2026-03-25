@@ -144,7 +144,7 @@ public class EnemyShooter : MonoBehaviour
         return null;
     }
 
-    public void Shoot(Vector2 dir)
+    public void Shoot(Vector3 dir)
     {
         BulletManager.Instance.SpawnBullet(
             transform.position,

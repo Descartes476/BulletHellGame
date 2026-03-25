@@ -631,6 +631,31 @@ public struct FixVector3
         return v;
     }
 
+    public bool TryNormalize(Fix64 epsilon = default(Fix64))
+    {
+        Fix64 resolvedEpsilon = epsilon == Fix64.Zero ? (Fix64)0.0001 : epsilon;
+        Fix64 sqrMagnitude = x * x + y * y + z * z;
+        Fix64 epsilonSqr = resolvedEpsilon * resolvedEpsilon;
+        if (sqrMagnitude < epsilonSqr)
+            return false;
+
+        Fix64 magnitude = Fix64.Sqrt(sqrMagnitude);
+        if (magnitude == Fix64.Zero)
+            return false;
+
+        Fix64 invMagnitude = Fix64.One / magnitude;
+        x *= invMagnitude;
+        y *= invMagnitude;
+        z *= invMagnitude;
+        return true;
+    }
+
+    public FixVector3 GetNormalizedOr(FixVector3 fallback, Fix64 epsilon = default(Fix64))
+    {
+        FixVector3 v = new FixVector3(this);
+        return v.TryNormalize(epsilon) ? v : fallback;
+    }
+
     public override string ToString()
     {
         return string.Format("x:{0} y:{1} z:{2}", x, y, z);

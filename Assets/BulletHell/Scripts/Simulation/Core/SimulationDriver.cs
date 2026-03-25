@@ -52,7 +52,7 @@ public class SimulationDriver : MonoBehaviour
         PlayerSimState initialPlayer = new PlayerSimState(
             1,
             new FixVector3((Fix64)initialPosition.x, (Fix64)initialPosition.y, (Fix64)initialPosition.z),
-            new FixVector2(Fix64.Zero, Fix64.One),
+            new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
             (Fix64)1,
             true,
             0,
@@ -118,7 +118,7 @@ public class SimulationDriver : MonoBehaviour
             {
                 Bullet bulletView = BulletManager.Instance.SpawnBullet(
                     bullet.Position.ToVector3(),
-                    bullet.Direction.ToVector2(),
+                    new Vector3((float)bullet.Direction.x, (float)bullet.Direction.y, (float)bullet.Direction.z),
                     (float)bullet.Speed,
                     (float)bullet.Damage,
                     bullet.RemainingLifetimeTicks * (1.0f / config.TickRate),
@@ -191,8 +191,8 @@ public class SimulationDriver : MonoBehaviour
         {
             int bulletEntityID = _nextBulletEntityID++;
             FixVector3 bulletPosition = nextWorld.Player.Position;
-            FixVector2 fallbackDirection = world.Player.AimDirection.GetNormalizedOr(new FixVector2(Fix64.Zero, Fix64.One));
-            FixVector2 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
+            FixVector3 fallbackDirection = world.Player.AimDirection.GetNormalizedOr(new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero));
+            FixVector3 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
 
             BulletSimState bullet = new BulletSimState(
                 bulletEntityID,
@@ -249,7 +249,7 @@ public class SimulationDriver : MonoBehaviour
             Vector3 pos = enemy.transform.position;
             FixVector3 fixPos = new FixVector3((Fix64)pos.x, (Fix64)pos.y, (Fix64)pos.z);
             int enemyEntityId = _nextEnemyEntityID;
-            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector2(1, 0), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, (Fix64)5.0);
+            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector3(Fix64.One, Fix64.Zero, Fix64.Zero), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, (Fix64)5.0);
             enemySimStates.Add(enemySimState);
             _enemyViews[enemyEntityId] = enemy;
             _nextEnemyEntityID++;
@@ -290,8 +290,8 @@ public class SimulationDriver : MonoBehaviour
 
             Fix64 r = bulletR + enemy.HitRadius;
             FixVector3 d = enemyPos - bulletPos;
-            FixVector2 dInPanel = new FixVector2(d.x, d.y);
-            if (FixVector2.SqrMagnitude(dInPanel) <= r * r)
+            Fix64 sqrDistanceInPanel = d.x * d.x + d.y * d.y;
+            if (sqrDistanceInPanel <= r * r)
             {
                 var nextHp = enemy.Hp;
                 nextHp -= bullet.Damage;

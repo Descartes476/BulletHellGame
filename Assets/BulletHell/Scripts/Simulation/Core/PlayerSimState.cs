@@ -4,7 +4,7 @@ namespace BulletHell.Simulation.Core
     {
         public int EntityId { get; private set; }  // 玩家ID
         public FixVector3 Position { get; private set; }  // 玩家位置
-        public FixVector2 AimDirection { get; private set; }  // 玩家当前瞄准方向
+        public FixVector3 AimDirection { get; private set; }  // 玩家当前瞄准方向
         public Fix64 Hp { get; private set; }
         public bool IsAlive { get; private set; }
         public int FireCooldownTicks { get; private set; }  // 射击冷却（单位：tick）
@@ -14,7 +14,7 @@ namespace BulletHell.Simulation.Core
         public bool IsRespawning => !IsAlive && RespawnCountdownTicks > 0;
         public bool IsInvincible => InvincibleTicks > 0;
 
-        public PlayerSimState(int entityId, FixVector3 position, FixVector2 aimDirection, Fix64 hp, bool isAlive, int fireCooldownTicks, int respawnCountdownTicks, int invincibleTicks)
+        public PlayerSimState(int entityId, FixVector3 position, FixVector3 aimDirection, Fix64 hp, bool isAlive, int fireCooldownTicks, int respawnCountdownTicks, int invincibleTicks)
         {
             EntityId = entityId;
             Position = position;

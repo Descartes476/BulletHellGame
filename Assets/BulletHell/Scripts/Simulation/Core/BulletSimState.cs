@@ -4,7 +4,7 @@ namespace BulletHell.Simulation.Core
     {
         public int EntityId { get; }
         public FixVector3 Position { get; }
-        public FixVector2 Direction { get; }
+        public FixVector3 Direction { get; }
         public Fix64 Speed { get; }
         public Fix64 Damage { get; }
         public Fix64 Radius { get; }
@@ -16,7 +16,7 @@ namespace BulletHell.Simulation.Core
         public BulletSimState(
             int entityId,
             FixVector3 position,
-            FixVector2 direction,
+            FixVector3 direction,
             Fix64 speed,
             Fix64 damage,
             Fix64 radius,

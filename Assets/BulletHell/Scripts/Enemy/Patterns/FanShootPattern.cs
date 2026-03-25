@@ -12,9 +12,9 @@ public class FanShootPattern : EnemyShootPattern
             return;
 
         Vector3 toPlayer = playerPos - shootPos;
-        Vector2 baseDir = new Vector2(toPlayer.x, toPlayer.y).normalized;
+        Vector3 baseDir = new Vector3(toPlayer.x, toPlayer.y, 0f).normalized;
         if (baseDir.sqrMagnitude <= 0.0001f)
-            baseDir = Vector2.up;
+            baseDir = Vector3.up;
 
         if (bulletCount == 1)
         {
@@ -30,7 +30,7 @@ public class FanShootPattern : EnemyShootPattern
         float baseAngle = -spread * 0.5f;
         for (int i = 0; i < bulletCount; i++)
         {
-            Vector2 direction = Rotate(baseDir, baseAngle + bulletGapAngle * i);
+            Vector3 direction = Rotate(baseDir, baseAngle + bulletGapAngle * i);
             enemyShooter.Shoot(direction);
         }
     }

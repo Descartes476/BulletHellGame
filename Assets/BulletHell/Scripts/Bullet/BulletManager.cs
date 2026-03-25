@@ -75,38 +75,6 @@ public class BulletManager : MonoBehaviour
         }
     }
 
-    // 使用简单圆形近似做命中检测，避免为弹幕数量较多的场景引入额外 Physics 开销。
-    private static bool TryHitEnemy(Bullet bullet)
-    {
-        var enemies = EnemyBase.ActiveEnemies;
-        if (enemies == null || enemies.Count == 0)
-            return false;
-
-        Vector3 bulletPos3 = bullet.transform.position;
-        Vector2 bulletPos = new Vector2(bulletPos3.x, bulletPos3.y);
-        float bulletR = bullet.radius;
-
-        for (int i = 0; i < enemies.Count; i++)
-        {
-            var enemy = enemies[i];
-            if (enemy == null || !enemy.isActiveAndEnabled)
-                continue;
-
-            Vector3 enemyPos3 = enemy.transform.position;
-            Vector2 enemyPos = new Vector2(enemyPos3.x, enemyPos3.y);
-
-            float r = bulletR + enemy.HitRadius;
-            Vector2 d = enemyPos - bulletPos;
-            if (d.sqrMagnitude <= r * r)
-            {
-                enemy.TakeDamage(bullet.damage);
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private static bool TryHitPlayer(Bullet bullet)
     {
         var players = PlayerBase.ActivePlayers;
@@ -114,7 +82,6 @@ public class BulletManager : MonoBehaviour
             return false;
 
         Vector3 bulletPos3 = bullet.transform.position;
-        Vector2 bulletPos = new Vector2(bulletPos3.x, bulletPos3.y);
         float bulletR = bullet.radius;
 
         for (int i = 0; i < players.Count; i++)
@@ -124,11 +91,12 @@ public class BulletManager : MonoBehaviour
                 continue;
 
             Vector3 playerPos3 = player.transform.position;
-            Vector2 playerPos = new Vector2(playerPos3.x, playerPos3.y);
 
             float r = bulletR + player.HitRadius;
-            Vector2 d = playerPos - bulletPos;
-            if (d.sqrMagnitude <= r * r)
+            float dx = playerPos3.x - bulletPos3.x;
+            float dy = playerPos3.y - bulletPos3.y;
+            float sqrDistanceInPanel = dx * dx + dy * dy;
+            if (sqrDistanceInPanel <= r * r)
             {
                 player.TakeDamage(bullet.damage);
                 return true;
@@ -147,7 +115,7 @@ public class BulletManager : MonoBehaviour
     /// <param name="damage">子弹伤害</param>
     /// <param name="lifetime">存活时间（秒），到期后回收/销毁</param>
     /// <param name="faction">子弹阵营（玩家/敌人）</param>
-    public Bullet SpawnBullet(Vector3 position, Vector2 direction, float speed, float damage, float lifetime, BulletFaction faction)
+    public Bullet SpawnBullet(Vector3 position, Vector3 direction, float speed, float damage, float lifetime, BulletFaction faction)
     {
         if(faction == BulletFaction.Player)
         {

@@ -7,13 +7,13 @@ public class Bullet : MonoBehaviour
     public float radius = 0.1f;
     public float maxLifetime = 30f; // 子弹存在时间上限
     private float lifetime = 0f; // 子弹已存在时间
-    private Vector2 moveDir;
+    private Vector3 moveDir;
 
-    public void Init(Vector3 position, Vector2 direction, float fSpeed, float damage, float lifetime)
+    public void Init(Vector3 position, Vector3 direction, float fSpeed, float damage, float lifetime)
     {
         if (direction.sqrMagnitude < 1e-8f)
         {
-            moveDir = Vector2.zero;
+            moveDir = Vector3.zero;
         }
         else
         {
@@ -36,8 +36,7 @@ public class Bullet : MonoBehaviour
         }
 
         Vector3 pos = transform.position;
-        pos.x += moveDir.x * speed * dt;
-        pos.y += moveDir.y * speed * dt;
+        pos += moveDir * speed * dt;
         transform.position = pos;
         return true;
     }

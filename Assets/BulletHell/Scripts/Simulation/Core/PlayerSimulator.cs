@@ -18,7 +18,7 @@ namespace BulletHell.Simulation.Core
                 return false;
             }
             //瞄准方向
-            if(inputFrame.AimX == 0 && inputFrame.AimY == 0 && currentPlayerState.AimDirection == FixVector2.Zero)
+            if(inputFrame.AimX == 0 && inputFrame.AimY == 0 && currentPlayerState.AimDirection == FixVector3.Zero)
             {
                 return false;
             }
@@ -30,11 +30,12 @@ namespace BulletHell.Simulation.Core
             // 瞄准方向
             Fix64 aimX = (Fix64)inputFrame.AimX/1000;
             Fix64 aimY = (Fix64)inputFrame.AimY/1000;
-            FixVector2 aimDirection = new FixVector2(aimX, aimY);
+            FixVector3 aimDirection = new FixVector3(aimX, aimY, Fix64.Zero);
             if(aimX == Fix64.Zero && aimY == Fix64.Zero)
             {
                 aimDirection = currentPlayerState.AimDirection;
             }
+
             FixVector2 moveInput = new FixVector2(inputFrame.MoveX, inputFrame.MoveY);
             if(moveInput != FixVector2.Zero)
             {
