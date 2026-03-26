@@ -1,12 +1,13 @@
 using System.Collections.Generic;
 using UnityEngine;
+
 public enum BulletFaction
 {
     Player = 0,
     Enemy = 1,
 }
 
-// 负责子弹对象池、逐帧更新，以及玩家/敌人两套子弹的命中检测与回收。
+// 负责子弹对象池与子弹视图实例管理。
 public class BulletManager : MonoBehaviour
 {
     public static BulletManager Instance { get; private set; }
@@ -51,65 +52,12 @@ public class BulletManager : MonoBehaviour
         enemyBulletPool = new ObjectPool(enemyBulletPrefab, bulletPoolRoot, preWarmCount);
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        float deltaTime = Time.deltaTime;
-        // 逆序遍历，便于在命中或过期后直接从活动列表中移除并回收。
-        for(int i = activeEnemyBullets.Count - 1; i >= 0; i--)
-        {
-            var bullet = activeEnemyBullets[i];
-            bool alive = bullet.Tick(deltaTime);
-            if (!alive)
-            {
-                activeEnemyBullets.RemoveAt(i);
-                enemyBulletPool.Return(bullet.gameObject);
-                continue;
-            }
 
-            if(TryHitPlayer(bullet))
-            {
-                activeEnemyBullets.RemoveAt(i);
-                enemyBulletPool.Return(bullet.gameObject);
-            }
-        }
-    }
-
-    private static bool TryHitPlayer(Bullet bullet)
-    {
-        var players = PlayerBase.ActivePlayers;
-        if (players == null || players.Count == 0)
-            return false;
-
-        Vector3 bulletPos3 = bullet.transform.position;
-        float bulletR = bullet.radius;
-
-        for (int i = 0; i < players.Count; i++)
-        {
-            var player = players[i];
-            if (player == null || !player.isActiveAndEnabled)
-                continue;
-
-            Vector3 playerPos3 = player.transform.position;
-
-            float r = bulletR + player.HitRadius;
-            float dx = playerPos3.x - bulletPos3.x;
-            float dy = playerPos3.y - bulletPos3.y;
-            float sqrDistanceInPanel = dx * dx + dy * dy;
-            if (sqrDistanceInPanel <= r * r)
-            {
-                player.TakeDamage(bullet.damage);
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /// <summary>
-    /// 从对应阵营的对象池取出子弹并注册到活动列表，后续由 Update 统一驱动移动、命中和回收。
+    /// 从对应阵营的对象池取出子弹视图并注册到活动列表，后续由 SimulationDriver 统一同步位置与回收。
     /// </summary>
-    /// <param name="position">生成位置（Vector2）</param>
+    /// <param name="position">生成位置</param>
     /// <param name="direction">发射方向（建议传入单位向量；若非单位向量，内部应自行归一化）</param>
     /// <param name="speed">子弹速度</param>
     /// <param name="damage">子弹伤害</param>

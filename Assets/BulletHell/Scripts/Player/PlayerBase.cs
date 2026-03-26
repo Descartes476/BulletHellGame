@@ -32,7 +32,6 @@ public class PlayerBase : MonoBehaviour
     public float HitRadius => hitRadius;
     public float CurrentHp => _currentHp;
     public float MaxHp => hp;
-    public bool IsDead => _currentHp <= 0;
     public Vector3 SpawnPosition => _spawnPosition;
     public bool IsInvincible => _invincibleTimer > 0f;
 
@@ -42,44 +41,11 @@ public class PlayerBase : MonoBehaviour
     public static event System.Action<PlayerBase> OnPlayerHpChanged;
 
 
-    // 统一处理玩家受伤入口；死亡时只负责广播事件并隐藏对象，复活由 GameManager 统一调度。
-    public void TakeDamage(float damage)
-    {
-        if (damage <= 0f || IsDead || IsInvincible)
-            return;
-
-        _currentHp -= damage;
-        if (_currentHp < 0f)
-            _currentHp = 0f;
-
-        OnPlayerHpChanged?.Invoke(this);
-        if(_currentHp <= 0f)
-        {
-            OnPlayerDied?.Invoke(this);
-            gameObject.SetActive(false);
-        }
-    }
-
-    public void Respawn()
-    {
-        transform.position = _spawnPosition;
-        gameObject.SetActive(true);
-        // 复活后的短暂无敌既防止落地立刻再次受击，也驱动闪烁表现。
-        _invincibleTimer = respawnInvincibleDuration;
-    }
-
     private void Update()
     {
-        if (_invincibleTimer > 0f)
-            _invincibleTimer -= Time.deltaTime;
-
-        UpdateInvincibleVisual();
+        
     }
 
-    private void OnDisable()
-    {
-        activePlayersInternal.Remove(this);
-    }
 
     private void Awake()
     {
@@ -90,29 +56,9 @@ public class PlayerBase : MonoBehaviour
             _originalColors[i] = _spriteRenderers[i].color;
         }
 
-        if (!_hasSpawnPosition)
-        {
-            _spawnPosition = transform.position;
-            _hasSpawnPosition = true;
-        }
+
     }
 
-    private void OnEnable()
-    {
-        if (!_hasSpawnPosition)
-        {
-            _spawnPosition = transform.position;
-            _hasSpawnPosition = true;
-        }
-
-        // 重新启用时视为一次新的可交互玩家实体，需要重置血量并重新注册到活动列表。
-        _currentHp = hp;
-        if(!activePlayersInternal.Contains(this))
-        {
-            activePlayersInternal.Add(this);
-        }
-        OnPlayerSpawned?.Invoke(this);
-    }
 
     // 通过透明度闪烁反馈无敌状态，不修改对象开关，避免影响碰撞和事件订阅。
     private void UpdateInvincibleVisual()

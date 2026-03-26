@@ -32,18 +32,4 @@ public class EnemyBase : MonoBehaviour
         ActiveEnemiesInternal.Remove(this);
     }
 
-    public void TakeDamage(float dmg)
-    {
-        if (dmg <= 0f || _currentHp <= 0f)
-            return;
-
-        _currentHp -= dmg;
-        if (_currentHp < 0f)
-            _currentHp = 0f;
-
-        if (_currentHp <= 0f)
-        {
-            gameObject.SetActive(false);
-        }
-    }
 }

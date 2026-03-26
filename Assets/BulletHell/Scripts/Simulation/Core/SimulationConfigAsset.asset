@@ -15,8 +15,15 @@ MonoBehaviour:
   tickRate: 60
   playerMoveSpeed: 8
   playerFireIntervalTicks: 18
-  playerBulletSpeed: 5
+  playerBulletSpeed: 10
   playerBulletDamage: 1
   playerBulletLifetimeTicks: 180
+  playerBulletHitRadius: 0.1
+  playerHitRadius: 0.5
   playAreaMin: {x: -8, y: -4.5}
   playAreaMax: {x: 8, y: 4.5}
+  enemyFireIntervalTicks: 54
+  enemyBulletSpeed: 0.01
+  enemyBulletDamage: 10
+  enemyBulletLifetimeTicks: 180
+  enemyBulletHitRadius: 0.1

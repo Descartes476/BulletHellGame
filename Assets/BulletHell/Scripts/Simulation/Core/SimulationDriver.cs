@@ -53,7 +53,8 @@ public class SimulationDriver : MonoBehaviour
             1,
             new FixVector3((Fix64)initialPosition.x, (Fix64)initialPosition.y, (Fix64)initialPosition.z),
             new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
-            (Fix64)1,
+            config.PlayerMaxHp,
+            config.PlayerHitRadius,
             true,
             0,
             0,
@@ -72,10 +73,14 @@ public class SimulationDriver : MonoBehaviour
 
         while (_accumulator >= tickInterval)
         {
-            //推进输入
+            // 推进输入与世界状态
             WorldSnapshot nextWorld = ResolveInput(_currentWorld);
-            //推进玩家子弹
+            // 生成敌方子弹
+            nextWorld = ResolveEnemyFire(nextWorld);
+            // 结算玩家子弹命中
             nextWorld = ResolvePlayerBulletHits(nextWorld);
+            // 结算敌方子弹命中
+            nextWorld = ResolveEnemyBulletHits(nextWorld);
             _currentWorld = nextWorld;
             _worldTick = _currentWorld.Tick;
 
@@ -86,7 +91,7 @@ public class SimulationDriver : MonoBehaviour
         FixVector3 simulatedPosition = _currentWorld.Player.Position;
         playerController.transform.position = simulatedPosition.ToVector3();
         
-        SynBulletsView(_currentWorld.Bullets);
+        SyncBulletViews(_currentWorld.Bullets);
         SyncEnemyView(_currentWorld.Enemies);
     }
 
@@ -103,7 +108,7 @@ public class SimulationDriver : MonoBehaviour
         _enemyDieInTick.Clear();
     }
 
-    private void SynBulletsView(BulletSimState[] bullets)
+    private void SyncBulletViews(BulletSimState[] bullets)
     {
         if (BulletManager.Instance == null)
         {
@@ -192,6 +197,7 @@ public class SimulationDriver : MonoBehaviour
             int bulletEntityID = _nextBulletEntityID++;
             FixVector3 bulletPosition = nextWorld.Player.Position;
             FixVector3 fallbackDirection = world.Player.AimDirection.GetNormalizedOr(new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero));
+            // 归一化，目标太近则给一个默认方向
             FixVector3 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
 
             BulletSimState bullet = new BulletSimState(
@@ -200,7 +206,7 @@ public class SimulationDriver : MonoBehaviour
                 bulletDirection,
                 config.PlayerBulletSpeed,
                 config.PlayerBulletDamage,
-                (Fix64)0.1f,
+                config.PlayerBulletHitRadius,
                 config.PlayerBulletLifetimeTicks,
                 BulletFaction.Player
             );
@@ -213,12 +219,65 @@ public class SimulationDriver : MonoBehaviour
         return nextWorld;
     }
 
+    // 敌人开火生成子弹
+    private WorldSnapshot ResolveEnemyFire(WorldSnapshot world)
+    {
+        EnemySimState[] enemies = (EnemySimState[])world.Enemies.Clone();
+        List<BulletSimState> bulletSims = new List<BulletSimState>();
+        bulletSims.AddRange(world.Bullets);
+        for(int i=0; i<enemies.Length; i++)
+        {
+            var enemy = enemies[i];
+            if(!enemy.IsAlive)
+            {
+                continue;
+            }
+            int coolDownTick = enemy.FireCooldownTicks;
+            if(enemy.CanFire)
+            {
+                int bulletEntityID = _nextBulletEntityID++;
+                FixVector3 bulletPosition = enemy.Position;
+                FixVector3 aimDirection = world.Player.Position - enemy.Position;
+                aimDirection = aimDirection.GetNormalizedOr(new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero));
+                BulletSimState bullet = new BulletSimState(
+                    bulletEntityID,
+                    bulletPosition,
+                    aimDirection,
+                    config.EnemyBulletSpeed,
+                    config.EnemyBulletDamage,
+                    config.EnemyBulletHitRadius,
+                    config.EnemyBulletLifetimeTicks,
+                    BulletFaction.Enemy
+                );
+                bulletSims.Add(bullet);
+                coolDownTick = config.EnemyFireIntervalTicks;
+            }
+            enemies[i] = new EnemySimState(
+                enemy.EntityId,
+                enemy.Position,
+                enemy.MoveDirection,
+                enemy.Hp,
+                enemy.MaxHp,
+                enemy.HitRadius,
+                enemy.Speed,
+                coolDownTick
+            );
+        }
+        return new WorldSnapshot(
+            world.Tick,
+            world.Config,
+            world.Player,
+            bulletSims.ToArray(),
+            enemies
+        );
+    }
+
     private WorldSnapshot ResolvePlayerBulletHits(WorldSnapshot world)
     {
         var bulletSims = world.Bullets;
         var enemies = (EnemySimState[])world.Enemies.Clone();
         List<BulletSimState> bulletsNotHit = new List<BulletSimState>();
-        for(int i = 0; i < bulletSims.Length; i++)
+        for(int i=0; i<bulletSims.Length; i++)
         {
             BulletSimState bullet = bulletSims[i];
             if (bullet.Faction != BulletFaction.Player || !TryHitEnemy(bullet, enemies))
@@ -237,6 +296,75 @@ public class SimulationDriver : MonoBehaviour
         return worldSnapshot;
     }
 
+    // 处理敌方子弹对玩家的命中结算，并移除命中的敌方子弹
+    private WorldSnapshot ResolveEnemyBulletHits(WorldSnapshot world)
+    {
+        PlayerSimState player = world.Player;
+        if(!player.IsAlive)
+        {
+            return world;
+        }
+        BulletSimState[] bulletSims = world.Bullets;
+        bool isAlive = player.IsAlive;
+        Fix64 nextHp = player.Hp;
+        int respawnCountdownTicks = player.RespawnCountdownTicks;
+        int invincibleTicks = player.InvincibleTicks;
+        List<BulletSimState> bulletsNotHit = new List<BulletSimState>();
+        for(int i=0; i<bulletSims.Length; i++)
+        {
+            BulletSimState bullet = bulletSims[i];
+            if(bullet.Faction == BulletFaction.Enemy && isAlive) // 避免循环中死亡还吃子弹
+            {
+                // 计算玩家受击
+                FixVector3 playerPos = player.Position;
+                FixVector3 bulletPos = bullet.Position;   
+                FixVector3 d = playerPos - bulletPos;
+                Fix64 sqrDistanceInPanel = d.x * d.x + d.y * d.y;
+                Fix64 r = bullet.Radius + player.HitRadius;
+                if (sqrDistanceInPanel <= r * r)
+                {
+                    if(!player.IsInvincible)
+                    {
+                        nextHp -= bullet.Damage;
+                        if(nextHp <= Fix64.Zero)
+                        {
+                            isAlive = false;
+                            nextHp = Fix64.Zero;
+                            respawnCountdownTicks = config.PlayerRespawnTicks;
+                            invincibleTicks = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    bulletsNotHit.Add(bullet);
+                }
+            }
+            else
+            {
+                bulletsNotHit.Add(bullet);
+            }
+        }
+        player = new PlayerSimState(
+            player.EntityId,
+            player.Position,
+            player.AimDirection,
+            nextHp,
+            player.HitRadius,
+            isAlive,
+            player.FireCooldownTicks,
+            respawnCountdownTicks,
+            invincibleTicks
+        );
+        return new WorldSnapshot(
+            world.Tick,
+            world.Config,
+            player,
+            bulletsNotHit.ToArray(),
+            world.Enemies
+        );
+    }
+
     private EnemySimState[] GetEnemySimStates()
     {
         EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
@@ -249,7 +377,7 @@ public class SimulationDriver : MonoBehaviour
             Vector3 pos = enemy.transform.position;
             FixVector3 fixPos = new FixVector3((Fix64)pos.x, (Fix64)pos.y, (Fix64)pos.z);
             int enemyEntityId = _nextEnemyEntityID;
-            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector3(Fix64.One, Fix64.Zero, Fix64.Zero), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, (Fix64)5.0);
+            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector3(Fix64.One, Fix64.Zero, Fix64.Zero), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, (Fix64)1.0, 0);
             enemySimStates.Add(enemySimState);
             _enemyViews[enemyEntityId] = enemy;
             _nextEnemyEntityID++;
@@ -307,7 +435,8 @@ public class SimulationDriver : MonoBehaviour
                     nextHp,
                     enemy.MaxHp,
                     enemy.HitRadius,
-                    enemy.Speed
+                    enemy.Speed,
+                    enemy.FireCooldownTicks
                 );
                 return true;
             }

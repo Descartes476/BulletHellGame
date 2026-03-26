@@ -7,7 +7,7 @@ namespace BulletHell.Simulation.Core
         public FixVector3 Direction { get; }
         public Fix64 Speed { get; }
         public Fix64 Damage { get; }
-        public Fix64 Radius { get; }
+        public Fix64 Radius { get; } // 子弹碰撞范围
         public int RemainingLifetimeTicks { get; }
         public BulletFaction Faction { get; }
 

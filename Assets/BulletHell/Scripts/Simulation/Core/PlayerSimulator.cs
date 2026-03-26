@@ -25,57 +25,89 @@ namespace BulletHell.Simulation.Core
             return inputFrame.FirePressed;
         }
 
-        public static PlayerSimState Step(in PlayerSimState currentPlayerState, in InputFrame inputFrame, in SimulationConfig config)
+        public static PlayerSimState Step(in PlayerSimState currentPlayer, in InputFrame inputFrame, in SimulationConfig config)
         {
+            bool shouldFire = ShouldFire(currentPlayer, inputFrame);
+            // 无敌倒计时
+            int invincibleTicks = currentPlayer.InvincibleTicks;
+            if(invincibleTicks > 0)
+            {
+                invincibleTicks--;
+            }
+            // 复活倒计时
+            bool isAlive = currentPlayer.IsAlive;
+            int respawnCountdownTicks = currentPlayer.RespawnCountdownTicks;
+            Fix64 nextHp = currentPlayer.Hp;
+            if(!isAlive)
+            {
+                if(respawnCountdownTicks > 0)
+                {
+                    respawnCountdownTicks--;
+                    if(respawnCountdownTicks <= 0)
+                    {
+
+                        isAlive = true;
+                        nextHp = config.PlayerMaxHp;
+                        invincibleTicks = config.PlayerInvincibleTicks;
+                        respawnCountdownTicks = 0;
+                    }
+                }
+            }
+            
+            
+
             // 瞄准方向
             Fix64 aimX = (Fix64)inputFrame.AimX/1000;
             Fix64 aimY = (Fix64)inputFrame.AimY/1000;
             FixVector3 aimDirection = new FixVector3(aimX, aimY, Fix64.Zero);
             if(aimX == Fix64.Zero && aimY == Fix64.Zero)
             {
-                aimDirection = currentPlayerState.AimDirection;
+                aimDirection = currentPlayer.AimDirection;
             }
 
-            FixVector2 moveInput = new FixVector2(inputFrame.MoveX, inputFrame.MoveY);
-            if(moveInput != FixVector2.Zero)
+            // 玩家移动
+            FixVector3 nextPosition = currentPlayer.Position;
+            if(isAlive)
             {
-                moveInput.Normalize();
+                FixVector2 moveInput = new FixVector2(inputFrame.MoveX, inputFrame.MoveY);
+                if(moveInput != FixVector2.Zero)
+                {
+                    moveInput.Normalize();
+                }
+                FixVector3 deltaMove = new FixVector3(moveInput.x, moveInput.y, Fix64.Zero) * config.PlayerMoveSpeed * config.TickDeltaTime;
+                nextPosition = currentPlayer.Position + deltaMove;
+                //限制玩家位置
+                Fix64 clampedX = nextPosition.x;
+                if (clampedX < config.PlayAreaMin.x) clampedX = config.PlayAreaMin.x;
+                if (clampedX > config.PlayAreaMax.x) clampedX = config.PlayAreaMax.x;            
+                Fix64 clampedY = nextPosition.y;
+                if (clampedY < config.PlayAreaMin.y) clampedY = config.PlayAreaMin.y;
+                if (clampedY > config.PlayAreaMax.y) clampedY = config.PlayAreaMax.y;
+                nextPosition = new FixVector3(clampedX, clampedY, currentPlayer.Position.z);
             }
-
-            // 位置变化
-            FixVector3 deltaMove = new FixVector3(moveInput.x, moveInput.y, Fix64.Zero) * config.PlayerMoveSpeed * config.TickDeltaTime;
-            FixVector3 nextPosition = currentPlayerState.Position + deltaMove;
-
-            //限制玩家位置
-            Fix64 clampedX = nextPosition.x;
-            if (clampedX < config.PlayAreaMin.x) clampedX = config.PlayAreaMin.x;
-            if (clampedX > config.PlayAreaMax.x) clampedX = config.PlayAreaMax.x;            
-            Fix64 clampedY = nextPosition.y;
-            if (clampedY < config.PlayAreaMin.y) clampedY = config.PlayAreaMin.y;
-            if (clampedY > config.PlayAreaMax.y) clampedY = config.PlayAreaMax.y;
-            nextPosition = new FixVector3(clampedX, clampedY, currentPlayerState.Position.z);
-
             
-            int nextCooldown = currentPlayerState.FireCooldownTicks > 0
-                ? currentPlayerState.FireCooldownTicks - 1
+            // 射击冷却
+            int nextCooldown = currentPlayer.FireCooldownTicks > 0
+                ? currentPlayer.FireCooldownTicks - 1
                 : 0;
-            if(ShouldFire(currentPlayerState, inputFrame))
+            if(shouldFire)
             {
                 nextCooldown = config.PlayerFireIntervalTicks;
             }
+
+            
             return new PlayerSimState(
-                currentPlayerState.EntityId,
+                currentPlayer.EntityId,
                 nextPosition,
                 aimDirection,
-                currentPlayerState.Hp,
-                currentPlayerState.IsAlive,
+                nextHp,
+                currentPlayer.HitRadius,
+                isAlive,
                 nextCooldown,
-                currentPlayerState.RespawnCountdownTicks,
-                currentPlayerState.InvincibleTicks
+                respawnCountdownTicks,
+                invincibleTicks
             );
-
         }
-
     }
 
 

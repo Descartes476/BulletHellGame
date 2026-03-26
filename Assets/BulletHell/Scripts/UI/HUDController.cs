@@ -19,8 +19,6 @@ public class HUDController : MonoBehaviour
         PlayerBase.OnPlayerHpChanged += HandlePlayerHpChanged;
         GameManager.OnScoreChanged += HandleScoreChanged;
         GameManager.OnGameOver += HandleGameOver;
-        GameManager.OnRespawnCountdownChanged += HandleRespawnCountdownChanged;
-        GameManager.OnPlayerRespawned += HandlePlayerRespawned;
 
         RefreshInitialView();
     }
@@ -31,8 +29,6 @@ public class HUDController : MonoBehaviour
         PlayerBase.OnPlayerHpChanged -= HandlePlayerHpChanged;
         GameManager.OnScoreChanged -= HandleScoreChanged;
         GameManager.OnGameOver -= HandleGameOver;
-        GameManager.OnRespawnCountdownChanged -= HandleRespawnCountdownChanged;
-        GameManager.OnPlayerRespawned -= HandlePlayerRespawned;
     }
 
     // 兼容场景中 HUD 晚于 GameManager / Player 创建的情况，启用时主动同步一次当前状态。
@@ -49,10 +45,6 @@ public class HUDController : MonoBehaviour
 
         if (respawnTxt != null)
         {
-            if (GameManager.Instance != null && GameManager.Instance.IsRespawning)
-                respawnTxt.text = $"Revive In: {Mathf.CeilToInt(GameManager.Instance.RespawnCountdown)}";
-            else
-                respawnTxt.text = string.Empty;
         }
     }
 
@@ -111,4 +103,5 @@ public class HUDController : MonoBehaviour
         int maxHp = Mathf.Max(1, Mathf.CeilToInt(player.MaxHp));
         hpTxt.text = $"HP: {hp}/{maxHp}";
     }
+
 }
