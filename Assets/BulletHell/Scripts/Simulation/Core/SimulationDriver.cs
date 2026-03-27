@@ -3,11 +3,13 @@ using BulletHell.Simulation.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine.Assertions.Must;
 
 public class SimulationDriver : MonoBehaviour
 {
     [SerializeField] private SimulationConfigAsset defaultConfigAsset;
-    [SerializeField] private PlayerController playerController;
+
+    public static SimulationDriver Instance { get; private set; }
 
     private SimulationConfig config;
     private WorldSnapshot _currentWorld;
@@ -15,14 +17,21 @@ public class SimulationDriver : MonoBehaviour
     private int _worldTick;
     private int _nextBulletEntityID = 1;
     private int _nextEnemyEntityID = 1;
+    private int _playerID = 1;
 
     private Dictionary<int, Bullet> _bulletViews = new Dictionary<int, Bullet>();
     private Dictionary<int, EnemyBase> _enemyViews = new Dictionary<int, EnemyBase>();
+    private Dictionary<int, PlayerController> _playerViews = new Dictionary<int, PlayerController>();
     private HashSet<int> _enemyDieInTick = new HashSet<int>();
+
+    public static event System.Action<int, int> OnPlayerHpChanged;
+    public static event System.Action<int, int> OnPlayerSpawned;
+    public static event System.Action<int> OnPlayerRespawnCountDownChanged;
 
     // Start is called before the first frame update
     void Start()
     {
+        Instance = this;
         _worldTick = 0;
         _accumulator = 0f;
 
@@ -33,10 +42,7 @@ public class SimulationDriver : MonoBehaviour
             return;
         }
 
-        if (playerController == null)
-        {
-            playerController = FindObjectOfType<PlayerController>();
-        }
+        PlayerController playerController = FindObjectOfType<PlayerController>();
 
         if (playerController == null)
         {
@@ -50,7 +56,7 @@ public class SimulationDriver : MonoBehaviour
 
         Vector3 initialPosition = playerController.transform.position;
         PlayerSimState initialPlayer = new PlayerSimState(
-            1,
+            _playerID,
             new FixVector3((Fix64)initialPosition.x, (Fix64)initialPosition.y, (Fix64)initialPosition.z),
             new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
             config.PlayerMaxHp,
@@ -59,12 +65,23 @@ public class SimulationDriver : MonoBehaviour
             0,
             0,
             0);
+        _playerViews[_playerID] = playerController;
         _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], GetEnemySimStates());
+        OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
+        WorldSnapshot oldWorld = _currentWorld;
         if (config.TickRate <= 0)
             return;
 
@@ -87,10 +104,8 @@ public class SimulationDriver : MonoBehaviour
             _accumulator -= tickInterval;
             ResolveEnemyDied();
         }
-
-        FixVector3 simulatedPosition = _currentWorld.Player.Position;
-        playerController.transform.position = simulatedPosition.ToVector3();
         
+        SyncPlayerView(oldWorld.Player, _currentWorld.Player);
         SyncBulletViews(_currentWorld.Bullets);
         SyncEnemyView(_currentWorld.Enemies);
     }
@@ -187,8 +202,72 @@ public class SimulationDriver : MonoBehaviour
         }
     }
 
+    private void SyncPlayerView(PlayerSimState oldPlayerState, PlayerSimState newPlayerState)
+    {
+        PlayerController playerController;
+        if(!_playerViews.TryGetValue(_playerID, out playerController))
+        {
+            Debug.LogError("SimulationDriver: PlayerController was not found.");
+            return;
+        }
+        PlayerBase playerBase = playerController.GetComponent<PlayerBase>();
+        if(!playerBase)
+        {
+            Debug.LogError("SimulationDriver: PlayerBase was not found.");
+            return;
+        }
+        // 玩家死亡、复活事件触发
+        if(!newPlayerState.IsAlive)
+        {
+            playerController.gameObject.SetActive(false);
+            OnPlayerRespawnCountDownChanged?.Invoke(newPlayerState.RespawnCountdownTicks);
+        }
+        else
+        {
+            playerController.gameObject.SetActive(true);
+            playerBase.UpdateInvincibleVisual(newPlayerState.IsInvincible);
+            if(!oldPlayerState.IsAlive)
+            {
+                OnPlayerRespawnCountDownChanged?.Invoke(newPlayerState.RespawnCountdownTicks);
+                OnPlayerSpawned?.Invoke((int)newPlayerState.Hp, (int)config.PlayerMaxHp);
+            }
+        }
+
+        // HUD血量
+        if(oldPlayerState.Hp != newPlayerState.Hp)
+        {
+            // 触发血量变化事件
+            OnPlayerHpChanged?.Invoke((int)newPlayerState.Hp, (int)config.PlayerMaxHp);
+        }
+
+        FixVector3 simulatedPosition = newPlayerState.Position;
+        playerController.transform.position = simulatedPosition.ToVector3();
+    }
+
+    public bool TryGetPlayerHudState(out int currentHp, out int maxHp, out int respawnCountdownTicks)
+    {
+        if (config.TickRate <= 0)
+        {
+            currentHp = 0;
+            maxHp = 0;
+            respawnCountdownTicks = 0;
+            return false;
+        }
+
+        currentHp = (int)_currentWorld.Player.Hp;
+        maxHp = (int)config.PlayerMaxHp;
+        respawnCountdownTicks = _currentWorld.Player.RespawnCountdownTicks;
+        return true;
+    }
+
     private WorldSnapshot ResolveInput(WorldSnapshot world)
     {
+        PlayerController playerController;
+        if(!_playerViews.TryGetValue(_playerID, out playerController))
+        {
+            Debug.LogError("SimulationDriver: PlayerController was not found.");
+            return world;
+        }
         InputFrame inputFrame = playerController.SampleCurrentInputFrame(_worldTick);
         bool shouldFire = PlayerSimulator.ShouldFire(world.Player, inputFrame);
         WorldSnapshot nextWorld = WorldSimulator.Step(world, inputFrame);
@@ -377,7 +456,7 @@ public class SimulationDriver : MonoBehaviour
             Vector3 pos = enemy.transform.position;
             FixVector3 fixPos = new FixVector3((Fix64)pos.x, (Fix64)pos.y, (Fix64)pos.z);
             int enemyEntityId = _nextEnemyEntityID;
-            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector3(Fix64.One, Fix64.Zero, Fix64.Zero), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, (Fix64)1.0, 0);
+            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector3(Fix64.One, Fix64.Zero, Fix64.Zero), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, config.EnemyMoveSpeed, 0);
             enemySimStates.Add(enemySimState);
             _enemyViews[enemyEntityId] = enemy;
             _nextEnemyEntityID++;

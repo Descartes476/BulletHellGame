@@ -3,26 +3,13 @@ using UnityEngine;
 
 public class EnemyShooter : MonoBehaviour
 {
-    [SerializeField] private float fireInterval = 1f; //最短射击间隔
     [SerializeField] private float bulletSpeed = 2f;
     [SerializeField] private float bulletLifeTime = 30f;
     [SerializeField] private float bulletDamage = 1f;
     [SerializeField] private List<EnemyShootPattern> shootPatterns; // 可用的射击模式
     [SerializeField] private float aimJitterDegrees = 12f;
-    [SerializeField] private int switchEveryShoot = 10; // 每射击几次切换模式
-    private int _shotCount = 0;
-    private EnemyShootPattern _currentPattern;
+  
 
-
-    
-
-    private float _fireTimer;
-    private Transform _player;
-    private float _nextFindPlayerTime;
-
-    public float BulletSpeed => bulletSpeed;
-    public float BulletLifeTime => bulletLifeTime;
-    public float BulletDamage => bulletDamage;
     public float AimJitterDegrees => aimJitterDegrees;
 
     // 根据权重随机选择射击模式

@@ -30,6 +30,7 @@ namespace BulletHell.Simulation.Core
         [SerializeField] private float enemyBulletDamage = 1f;
         [SerializeField] private int enemyBulletLifetimeTicks = 180;
         [SerializeField] private float enemyBulletHitRadius = 0.1f;
+        [SerializeField] private float enemyMoveSpeed = 0.5f;
         
 
         public SimulationConfig ToSimulationConfig()
@@ -52,7 +53,8 @@ namespace BulletHell.Simulation.Core
                 (Fix64)enemyBulletSpeed,
                 (Fix64)enemyBulletDamage,
                 enemyBulletLifetimeTicks,
-                (Fix64)enemyBulletHitRadius
+                (Fix64)enemyBulletHitRadius,
+                (Fix64)enemyMoveSpeed
                 );
         }
     }

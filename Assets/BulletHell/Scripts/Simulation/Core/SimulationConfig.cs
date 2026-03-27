@@ -7,7 +7,7 @@ namespace BulletHell.Simulation.Core
         public Fix64 PlayerMoveSpeed { get; }  // 玩家移动速度
         public int PlayerFireIntervalTicks { get; } // 玩家射击冷却
         public Fix64 PlayerBulletSpeed { get; } // 玩家子弹速度
-        public Fix64 PlayerBulletDamage { get; } 
+        public Fix64 PlayerBulletDamage { get; } // 玩家子弹伤害
         public int PlayerBulletLifetimeTicks { get; } // 玩家子弹寿命
         public Fix64 PlayerBulletHitRadius { get; } // 子弹碰撞范围
         public Fix64 PlayerHitRadius { get; } // 玩家受击范围
@@ -19,11 +19,12 @@ namespace BulletHell.Simulation.Core
         public FixVector2 PlayAreaMax { get; }
 
         // 敌人参数
-        public int EnemyFireIntervalTicks { get; }
-        public Fix64 EnemyBulletSpeed { get; }
-        public Fix64 EnemyBulletDamage{ get; }
-        public int EnemyBulletLifetimeTicks { get; }
-        public Fix64 EnemyBulletHitRadius { get; }
+        public int EnemyFireIntervalTicks { get; } // 敌人射击冷却
+        public Fix64 EnemyBulletSpeed { get; } // 敌人子弹速度
+        public Fix64 EnemyBulletDamage{ get; } // 敌人子弹伤害
+        public int EnemyBulletLifetimeTicks { get; } // 敌人子弹寿命
+        public Fix64 EnemyBulletHitRadius { get; } // 敌人子弹碰撞范围
+        public Fix64 EnemyMoveSpeed { get; } // 敌人移动速度
         public Fix64 TickDeltaTime => TickRate > 0 ? Fix64.One / TickRate : Fix64.Zero;
 
         public SimulationConfig(
@@ -44,7 +45,8 @@ namespace BulletHell.Simulation.Core
             Fix64 enemyBulletSpeed,
             Fix64 enemyBulletDamage,
             int enemyBulletLifetimeTicks,
-            Fix64 enemyBulletHitRadius
+            Fix64 enemyBulletHitRadius,
+            Fix64 enemyMoveSpeed
         )
         {
             TickRate = tickRate;
@@ -68,6 +70,7 @@ namespace BulletHell.Simulation.Core
             EnemyBulletDamage = enemyBulletDamage;
             EnemyBulletLifetimeTicks = enemyBulletLifetimeTicks;
             EnemyBulletHitRadius = enemyBulletHitRadius;
+            EnemyMoveSpeed = enemyMoveSpeed;
         }
     }
 }

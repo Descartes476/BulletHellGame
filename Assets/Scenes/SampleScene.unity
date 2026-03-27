@@ -256,17 +256,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 248483743}
   m_CullTransparentMesh: 1
---- !u!114 &480277516 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 149700631564665330, guid: 996016ed9a572df41b3298a0ee819dd3, type: 3}
-  m_PrefabInstance: {fileID: 2370267585591584027}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2f1a0ad8d185d0d48a3784b4403b6105, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &519420028
 GameObject:
   m_ObjectHideFlags: 0
@@ -670,7 +659,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aca27eb4588a2994691b937db78adf40, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  respawnDelay: 3
 --- !u!4 &912282219
 Transform:
   m_ObjectHideFlags: 0
@@ -699,7 +687,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   defaultConfigAsset: {fileID: 11400000, guid: bb470e4561407834d88d15ace3e85e3d, type: 2}
-  playerController: {fileID: 480277516}
 --- !u!1 &1018815621
 GameObject:
   m_ObjectHideFlags: 0
@@ -796,7 +783,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1651636590
 RectTransform:
   m_ObjectHideFlags: 0

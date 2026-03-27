@@ -11,7 +11,6 @@ public class GameManager : MonoBehaviour
     public bool IsGameOver { get; private set; }
 
     public static event System.Action<int> OnScoreChanged;
-    public static event System.Action OnGameOver;
     public static event System.Action<int> OnEnemyDied;
 
     // 这里只处理敌人死亡后的分数结算，不直接参与敌人销毁逻辑。

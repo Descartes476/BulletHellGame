@@ -20,10 +20,14 @@ MonoBehaviour:
   playerBulletLifetimeTicks: 180
   playerBulletHitRadius: 0.1
   playerHitRadius: 0.5
+  playerMaxHp: 10
+  playerRespawnTicks: 180
+  playerInvincibleTicks: 180
   playAreaMin: {x: -8, y: -4.5}
   playAreaMax: {x: 8, y: 4.5}
   enemyFireIntervalTicks: 54
-  enemyBulletSpeed: 0.01
-  enemyBulletDamage: 10
+  enemyBulletSpeed: 2
+  enemyBulletDamage: 5
   enemyBulletLifetimeTicks: 180
   enemyBulletHitRadius: 0.1
+  enemyMoveSpeed: 0.5

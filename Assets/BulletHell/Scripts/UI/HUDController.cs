@@ -15,47 +15,46 @@ public class HUDController : MonoBehaviour
 
     void OnEnable()
     {
-        PlayerBase.OnPlayerSpawned += HandlePlayerSpawned;
-        PlayerBase.OnPlayerHpChanged += HandlePlayerHpChanged;
+        SimulationDriver.OnPlayerSpawned += HandlePlayerSpawned;
+        SimulationDriver.OnPlayerHpChanged += HandlePlayerHpChanged;
+        SimulationDriver.OnPlayerRespawnCountDownChanged += HandleRespawnCountdownChanged;
         GameManager.OnScoreChanged += HandleScoreChanged;
-        GameManager.OnGameOver += HandleGameOver;
 
         RefreshInitialView();
     }
 
     void OnDisable()
     {
-        PlayerBase.OnPlayerSpawned -= HandlePlayerSpawned;
-        PlayerBase.OnPlayerHpChanged -= HandlePlayerHpChanged;
+        SimulationDriver.OnPlayerSpawned -= HandlePlayerSpawned;
+        SimulationDriver.OnPlayerHpChanged -= HandlePlayerHpChanged;
+        SimulationDriver.OnPlayerRespawnCountDownChanged -= HandleRespawnCountdownChanged;
         GameManager.OnScoreChanged -= HandleScoreChanged;
-        GameManager.OnGameOver -= HandleGameOver;
     }
 
-    // 兼容场景中 HUD 晚于 GameManager / Player 创建的情况，启用时主动同步一次当前状态。
+    // 启用时主动同步一次当前状态。
     private void RefreshInitialView()
     {
         HandleScoreChanged(GameManager.Instance != null ? GameManager.Instance.Score : 0);
 
-        var players = PlayerBase.ActivePlayers;
-        if (players != null && players.Count > 0)
-            SetHpText(players[0]);
-
-        if (gameOverPanel != null)
-            gameOverPanel.SetActive(GameManager.Instance != null && GameManager.Instance.IsGameOver);
-
-        if (respawnTxt != null)
+        if (SimulationDriver.Instance != null && SimulationDriver.Instance.TryGetPlayerHudState(out int currentHp, out int maxHp, out int respawnCountdownTicks))
         {
+            SetHpText(currentHp, maxHp);
+            HandleRespawnCountdownChanged(respawnCountdownTicks);
+        }
+        else
+        {
+            HandleRespawnCountdownChanged(0);
         }
     }
 
-    private void HandlePlayerSpawned(PlayerBase player)
+    private void HandlePlayerSpawned(int currentHp, int maxHp)
     {
-        SetHpText(player);
+        SetHpText(currentHp, maxHp);
     }
 
-    private void HandlePlayerHpChanged(PlayerBase player)
+    private void HandlePlayerHpChanged(int currentHp, int maxHp)
     {
-        SetHpText(player);
+        SetHpText(currentHp, maxHp);
     }
 
     private void HandleScoreChanged(int score)
@@ -64,44 +63,27 @@ public class HUDController : MonoBehaviour
             scoreTxt.text = $"Score: {score}";
     }
 
-    private void HandleGameOver()
-    {
-        if (gameOverPanel != null)
-            gameOverPanel.SetActive(true);
-    }
 
-    private void HandleRespawnCountdownChanged(float countdown)
+    private void HandleRespawnCountdownChanged(int countdownTick)
     {
         // 这里把复活倒计时阶段也视为一种临时 Game Over 画面，用于遮罩和倒计时提示。
         if (gameOverPanel != null)
-            gameOverPanel.SetActive(countdown > 0f);
+            gameOverPanel.SetActive(countdownTick > 0f);
 
         if (respawnTxt == null)
             return;
 
-        if (countdown > 0f)
-            respawnTxt.text = $"Revive In: {Mathf.CeilToInt(countdown)}";
+        if (countdownTick > 0f)
+            respawnTxt.text = $"Revive In: {Mathf.CeilToInt(countdownTick)}";
         else
             respawnTxt.text = string.Empty;
     }
 
-    private void HandlePlayerRespawned(PlayerBase player)
+    private void SetHpText(int currentHp, int maxHp)
     {
-        SetHpText(player);
-        if (respawnTxt != null)
-            respawnTxt.text = string.Empty;
-        if (gameOverPanel != null)
-            gameOverPanel.SetActive(false);
-    }
-
-    private void SetHpText(PlayerBase player)
-    {
-        if (hpTxt == null || player == null)
-            return;
-
-        int hp = Mathf.Max(0, Mathf.CeilToInt(player.CurrentHp));
-        int maxHp = Mathf.Max(1, Mathf.CeilToInt(player.MaxHp));
-        hpTxt.text = $"HP: {hp}/{maxHp}";
+        currentHp = Mathf.Max(0, Mathf.CeilToInt(currentHp));
+        maxHp = Mathf.Max(1, Mathf.CeilToInt(maxHp));
+        hpTxt.text = $"HP: {currentHp}/{maxHp}";
     }
 
 }
