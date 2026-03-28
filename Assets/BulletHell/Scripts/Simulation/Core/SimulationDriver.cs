@@ -60,6 +60,7 @@ public class SimulationDriver : MonoBehaviour
     public static event System.Action<int> OnPlayerRespawnCountDownChanged;
 
     public SimulationRunMode RunMode => _runMode;
+    public bool IsReplayRunning => _runMode == SimulationRunMode.Replay;
 
     // Start is called before the first frame update
     void Start()
@@ -113,6 +114,12 @@ public class SimulationDriver : MonoBehaviour
             InputFrame inputFrame;
             if(!TryGetCurrentInput(out inputFrame))
             {
+                if(_runMode == SimulationRunMode.Replay && _worldTick > _inputSource.GetRecordMaxTick())
+                {
+                    Debug.Log("SimulationDriver: Replay Finished.");
+                    StopReplayAndReturnToLive();
+                    return;
+                }
                 Debug.LogError($"SimulationDriver: Failed to get input for tick {_worldTick}.");
                 return;
             }
@@ -125,9 +132,9 @@ public class SimulationDriver : MonoBehaviour
             nextWorld = ResolvePlayerBulletHits(nextWorld);
             // 结算敌方子弹命中
             nextWorld = ResolveEnemyBulletHits(nextWorld);
+            ProcessReplayFrameResult(inputFrame, _currentWorld);
             _currentWorld = nextWorld;
             _worldTick = _currentWorld.Tick;
-            ProcessReplayFrameResult(inputFrame, _currentWorld);
 
             _accumulator -= tickInterval;
             ResolveEnemyDied();
@@ -136,6 +143,19 @@ public class SimulationDriver : MonoBehaviour
         SyncPlayerView(oldWorld.Player, _currentWorld.Player);
         SyncBulletViews(_currentWorld.Bullets);
         SyncEnemyView(_currentWorld.Enemies);
+        
+        if(Input.GetMouseButtonDown(1))
+        {
+            if(_recorder != null)
+            {
+                ReplayData replayData = _recorder.EndRecording();
+                TryStartReplay(replayData);
+            }
+            else
+            {
+                Debug.Log("SimulationDriver: _recorder为空.");
+            }
+        }
     }
 
     //触发敌人死亡事件
@@ -688,6 +708,20 @@ public class SimulationDriver : MonoBehaviour
         }
 
         _bulletViews.Clear();
+    }
+
+    public bool TryStartReplay(ReplayData replaydata)
+    {
+        if(_runMode == SimulationRunMode.Live)
+        {
+            return SetReplayMode(replaydata);
+        }
+        return false;
+    }
+
+    public void StopReplayAndReturnToLive()
+    {
+        SetLiveMode();
     }
 
     private EnemySimState[] GetEnemySimStates()

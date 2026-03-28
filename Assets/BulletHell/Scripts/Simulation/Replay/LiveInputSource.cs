@@ -25,4 +25,9 @@ public sealed class LiveInputSource : IInputSource
         inputFrame = playerController.SampleCurrentInputFrame(tick);
         return true;
     }
+
+    public int GetRecordMaxTick()
+    {
+        return 0;
+    }
 }

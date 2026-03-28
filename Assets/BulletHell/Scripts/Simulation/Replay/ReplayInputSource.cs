@@ -38,4 +38,17 @@ public sealed class ReplayInputSource : IInputSource
         inputFrame = default;
         return false;
     }
+
+    public int GetRecordMaxTick()
+    {
+        if(_replayData == null)
+        {
+            return 0;
+        }
+        if(_replayData.Frames.Count == 0)
+        {
+            return 0;
+        }
+        return _replayData.Frames[_replayData.Frames.Count - 1].Tick;
+    }
 }
