@@ -12,28 +12,47 @@ public enum SimulationRunMode
 
 public class SimulationDriver : MonoBehaviour
 {
+    // 默认使用的模拟配置资源
     [SerializeField] private SimulationConfigAsset defaultConfigAsset;
 
     public static SimulationDriver Instance { get; private set; }
 
+    // 当前运行时使用的模拟配置
     private SimulationConfig config;
+    // 当前模拟驱动使用的输入源
     private IInputSource _inputSource;
+    // 当前模拟运行模式
     private SimulationRunMode _runMode = SimulationRunMode.Live;
+    // 当前 tick 对应的世界快照
     private WorldSnapshot _currentWorld;
+    // 实时模式下用于录制回放数据的记录器
     private ReplayRecorder _recorder;
+    // 回放模式下用于校验世界状态的校验器
     private ReplayVerifier _verifier;
+    // 帧时间累积器，用于按固定tick推进模拟
     private float _accumulator;
+    // 当前世界推进到的tick编号
     private int _worldTick;
+    // 下一个可分配的子弹实体ID
     private int _nextBulletEntityID = 1;
+    // 下一个可分配的敌人实体ID
     private int _nextEnemyEntityID = 1;
+    // 玩家实体使用的固定ID
     private int _playerID = 1;
+    // 场景初始时的玩家位置
     private Vector3 _initialPlayerPosition;
+    // 场景初始时缓存的敌人对象列表
     private List<EnemyBase> _initialSceneEnemies = new List<EnemyBase>();
-    private Dictionary<string, Vector3> _initialEnemyPositions = new Dictionary<string, Vector3>();
+    // 场景初始时各敌人对象对应的位置缓存
+    private Dictionary<EnemyBase, Vector3> _initialEnemyPositions = new Dictionary<EnemyBase, Vector3>();
 
+    // 子弹实体ID到显示对象的映射
     private Dictionary<int, Bullet> _bulletViews = new Dictionary<int, Bullet>();
+    // 敌人实体ID到显示对象的映射
     private Dictionary<int, EnemyBase> _enemyViews = new Dictionary<int, EnemyBase>();
+    // 玩家实体ID到显示对象的映射
     private Dictionary<int, PlayerController> _playerViews = new Dictionary<int, PlayerController>();
+    // 当前 tick 内被击杀的敌人 ID 集合
     private HashSet<int> _enemyDieInTick = new HashSet<int>();
 
     public static event System.Action<int, int> OnPlayerHpChanged;
@@ -69,7 +88,6 @@ public class SimulationDriver : MonoBehaviour
         playerController.SetSimulationDriven(true);
         CacheInitialSceneState(playerController);
         SetLiveMode(playerController);
-        ResetSimulationWorld(playerController);
     }
 
     private void OnDestroy()
@@ -300,6 +318,7 @@ public class SimulationDriver : MonoBehaviour
         _verifier = null;
         _recorder = new ReplayRecorder();
         _recorder.BeginRecording(config, 0);
+        ResetSimulationWorld(playerController);
     }
 
     public bool SetReplayMode(ReplayData replayData)
@@ -307,6 +326,11 @@ public class SimulationDriver : MonoBehaviour
         if(replayData == null)
         {
             Debug.LogError("SimulationDriver: ReplayData is null.");
+            return false;
+        }
+
+        if(!IsReplayConfigCompatible(replayData))
+        {
             return false;
         }
 
@@ -523,6 +547,56 @@ public class SimulationDriver : MonoBehaviour
         );
     }
 
+    // 当前配置与记录配置校验
+    private bool IsReplayConfigCompatible(ReplayData replayData)
+    {
+        ReplayConfigSnapshot snapshot = replayData.ConfigSnapshot;
+
+        if(snapshot.TickRate != config.TickRate)
+        {
+            Debug.LogError($"SimulationDriver: Replay TickRate mismatch. Replay={snapshot.TickRate}, Current={config.TickRate}.");
+            return false;
+        }
+
+        if(snapshot.PlayerMoveSpeedRaw != config.PlayerMoveSpeed.RawValue)
+        {
+            Debug.LogError($"SimulationDriver: Replay PlayerMoveSpeed mismatch. Replay={snapshot.PlayerMoveSpeedRaw}, Current={config.PlayerMoveSpeed.RawValue}.");
+            return false;
+        }
+
+        if(snapshot.PlayerBulletSpeedRaw != config.PlayerBulletSpeed.RawValue)
+        {
+            Debug.LogError($"SimulationDriver: Replay PlayerBulletSpeed mismatch. Replay={snapshot.PlayerBulletSpeedRaw}, Current={config.PlayerBulletSpeed.RawValue}.");
+            return false;
+        }
+
+        if(snapshot.EnemyBulletSpeedRaw != config.EnemyBulletSpeed.RawValue)
+        {
+            Debug.LogError($"SimulationDriver: Replay EnemyBulletSpeed mismatch. Replay={snapshot.EnemyBulletSpeedRaw}, Current={config.EnemyBulletSpeed.RawValue}.");
+            return false;
+        }
+
+        if(snapshot.PlayerMaxHpRaw != config.PlayerMaxHp.RawValue)
+        {
+            Debug.LogError($"SimulationDriver: Replay PlayerMaxHp mismatch. Replay={snapshot.PlayerMaxHpRaw}, Current={config.PlayerMaxHp.RawValue}.");
+            return false;
+        }
+
+        if(snapshot.PlayerRespawnTicks != config.PlayerRespawnTicks)
+        {
+            Debug.LogError($"SimulationDriver: Replay PlayerRespawnTicks mismatch. Replay={snapshot.PlayerRespawnTicks}, Current={config.PlayerRespawnTicks}.");
+            return false;
+        }
+
+        if(snapshot.PlayerInvincibleTicks != config.PlayerInvincibleTicks)
+        {
+            Debug.LogError($"SimulationDriver: Replay PlayerInvincibleTicks mismatch. Replay={snapshot.PlayerInvincibleTicks}, Current={config.PlayerInvincibleTicks}.");
+            return false;
+        }
+
+        return true;
+    }
+
     // 记录场景初始状态
     private void CacheInitialSceneState(PlayerController playerController)
     {
@@ -531,12 +605,21 @@ public class SimulationDriver : MonoBehaviour
         _initialEnemyPositions.Clear();
 
         EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
-        Array.Sort(sceneEnemies, (a, b) => string.CompareOrdinal(GetTransformPath(a.transform), GetTransformPath(b.transform)));
+        Array.Sort(sceneEnemies, (a, b) =>
+        {
+            int pathCompare = string.CompareOrdinal(GetTransformPath(a.transform), GetTransformPath(b.transform));
+            if(pathCompare != 0)
+            {
+                return pathCompare;
+            }
+
+            return a.transform.GetSiblingIndex().CompareTo(b.transform.GetSiblingIndex());
+        });
         for(int i = 0; i < sceneEnemies.Length; i++)
         {
             EnemyBase enemy = sceneEnemies[i];
             _initialSceneEnemies.Add(enemy);
-            _initialEnemyPositions[GetTransformPath(enemy.transform)] = enemy.transform.position;
+            _initialEnemyPositions[enemy] = enemy.transform.position;
         }
     }
 
@@ -564,7 +647,8 @@ public class SimulationDriver : MonoBehaviour
             0);
 
         _playerViews[_playerID] = playerController;
-        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], GetEnemySimStates());
+        var enemies = GetEnemySimStates();
+        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], enemies);
         OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
     }
 
@@ -582,8 +666,7 @@ public class SimulationDriver : MonoBehaviour
                 continue;
             }
 
-            string path = GetTransformPath(enemy.transform);
-            if(_initialEnemyPositions.TryGetValue(path, out Vector3 initialPosition))
+            if(_initialEnemyPositions.TryGetValue(enemy, out Vector3 initialPosition))
             {
                 enemy.gameObject.SetActive(true);
                 enemy.transform.position = initialPosition;
@@ -609,13 +692,15 @@ public class SimulationDriver : MonoBehaviour
 
     private EnemySimState[] GetEnemySimStates()
     {
-        EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
-        Array.Sort(sceneEnemies, (a, b) => string.CompareOrdinal(GetTransformPath(a.transform), GetTransformPath(b.transform)));
         List<EnemySimState> enemySimStates = new List<EnemySimState>();
         _enemyViews.Clear();
-        for(int i=0; i<sceneEnemies.Length; i++)
+        for(int i=0; i<_initialSceneEnemies.Count; i++)
         {
-            EnemyBase enemy = sceneEnemies[i];
+            EnemyBase enemy = _initialSceneEnemies[i];
+            if(enemy == null)
+            {
+                continue;
+            }
             Vector3 pos = enemy.transform.position;
             FixVector3 fixPos = new FixVector3((Fix64)pos.x, (Fix64)pos.y, (Fix64)pos.z);
             int enemyEntityId = _nextEnemyEntityID;
