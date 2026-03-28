@@ -3,7 +3,12 @@ using BulletHell.Simulation.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine.Assertions.Must;
+
+public enum SimulationRunMode
+{
+    Live,
+    Replay
+}
 
 public class SimulationDriver : MonoBehaviour
 {
@@ -12,12 +17,19 @@ public class SimulationDriver : MonoBehaviour
     public static SimulationDriver Instance { get; private set; }
 
     private SimulationConfig config;
+    private IInputSource _inputSource;
+    private SimulationRunMode _runMode = SimulationRunMode.Live;
     private WorldSnapshot _currentWorld;
+    private ReplayRecorder _recorder;
+    private ReplayVerifier _verifier;
     private float _accumulator;
     private int _worldTick;
     private int _nextBulletEntityID = 1;
     private int _nextEnemyEntityID = 1;
     private int _playerID = 1;
+    private Vector3 _initialPlayerPosition;
+    private List<EnemyBase> _initialSceneEnemies = new List<EnemyBase>();
+    private Dictionary<string, Vector3> _initialEnemyPositions = new Dictionary<string, Vector3>();
 
     private Dictionary<int, Bullet> _bulletViews = new Dictionary<int, Bullet>();
     private Dictionary<int, EnemyBase> _enemyViews = new Dictionary<int, EnemyBase>();
@@ -27,6 +39,8 @@ public class SimulationDriver : MonoBehaviour
     public static event System.Action<int, int> OnPlayerHpChanged;
     public static event System.Action<int, int> OnPlayerSpawned;
     public static event System.Action<int> OnPlayerRespawnCountDownChanged;
+
+    public SimulationRunMode RunMode => _runMode;
 
     // Start is called before the first frame update
     void Start()
@@ -53,21 +67,9 @@ public class SimulationDriver : MonoBehaviour
 
         config = defaultConfigAsset.ToSimulationConfig();
         playerController.SetSimulationDriven(true);
-
-        Vector3 initialPosition = playerController.transform.position;
-        PlayerSimState initialPlayer = new PlayerSimState(
-            _playerID,
-            new FixVector3((Fix64)initialPosition.x, (Fix64)initialPosition.y, (Fix64)initialPosition.z),
-            new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
-            config.PlayerMaxHp,
-            config.PlayerHitRadius,
-            true,
-            0,
-            0,
-            0);
-        _playerViews[_playerID] = playerController;
-        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], GetEnemySimStates());
-        OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
+        CacheInitialSceneState(playerController);
+        SetLiveMode(playerController);
+        ResetSimulationWorld(playerController);
     }
 
     private void OnDestroy()
@@ -90,8 +92,15 @@ public class SimulationDriver : MonoBehaviour
 
         while (_accumulator >= tickInterval)
         {
+            InputFrame inputFrame;
+            if(!TryGetCurrentInput(out inputFrame))
+            {
+                Debug.LogError($"SimulationDriver: Failed to get input for tick {_worldTick}.");
+                return;
+            }
+
             // 推进输入与世界状态
-            WorldSnapshot nextWorld = ResolveInput(_currentWorld);
+            WorldSnapshot nextWorld = ResolveInput(_currentWorld, inputFrame);
             // 生成敌方子弹
             nextWorld = ResolveEnemyFire(nextWorld);
             // 结算玩家子弹命中
@@ -100,6 +109,7 @@ public class SimulationDriver : MonoBehaviour
             nextWorld = ResolveEnemyBulletHits(nextWorld);
             _currentWorld = nextWorld;
             _worldTick = _currentWorld.Tick;
+            ProcessReplayFrameResult(inputFrame, _currentWorld);
 
             _accumulator -= tickInterval;
             ResolveEnemyDied();
@@ -260,15 +270,84 @@ public class SimulationDriver : MonoBehaviour
         return true;
     }
 
-    private WorldSnapshot ResolveInput(WorldSnapshot world)
+    private bool TryGetCurrentInput(out InputFrame inputFrame)
     {
-        PlayerController playerController;
-        if(!_playerViews.TryGetValue(_playerID, out playerController))
+        if(_inputSource == null)
         {
-            Debug.LogError("SimulationDriver: PlayerController was not found.");
-            return world;
+            inputFrame = default;
+            return false;
         }
-        InputFrame inputFrame = playerController.SampleCurrentInputFrame(_worldTick);
+
+        return _inputSource.TryGetInput(_worldTick, out inputFrame);
+    }
+
+    public void SetLiveMode(PlayerController playerController = null)
+    {
+        if(playerController == null)
+        {
+            _playerViews.TryGetValue(_playerID, out playerController);
+        }
+
+        if(playerController == null)
+        {
+            Debug.LogError("SimulationDriver: PlayerController was not found when switching to live mode.");
+            _inputSource = null;
+            return;
+        }
+
+        _inputSource = new LiveInputSource(playerController);
+        _runMode = SimulationRunMode.Live;
+        _verifier = null;
+        _recorder = new ReplayRecorder();
+        _recorder.BeginRecording(config, 0);
+    }
+
+    public bool SetReplayMode(ReplayData replayData)
+    {
+        if(replayData == null)
+        {
+            Debug.LogError("SimulationDriver: ReplayData is null.");
+            return false;
+        }
+
+        if(!_playerViews.TryGetValue(_playerID, out PlayerController playerController) || playerController == null)
+        {
+            Debug.LogError("SimulationDriver: PlayerController was not found when switching to replay mode.");
+            return false;
+        }
+
+        ResetSimulationWorld(playerController);
+
+        _inputSource = new ReplayInputSource(replayData);
+        _runMode = SimulationRunMode.Replay;
+        _recorder = null;
+        _verifier = new ReplayVerifier();
+        _verifier.Load(replayData);
+        return true;
+    }
+
+    // 执行帧记录/回放校验
+    private void ProcessReplayFrameResult(InputFrame inputFrame, WorldSnapshot world)
+    {
+        ulong worldHash = WorldStateHasher.Compute(world);
+
+        if(_runMode == SimulationRunMode.Live)
+        {
+            _recorder?.RecordFrame(world.Tick, inputFrame, worldHash);
+            return;
+        }
+
+        if(_runMode == SimulationRunMode.Replay && _verifier != null)
+        {
+            if(!_verifier.Verify(world.Tick, worldHash, out ReplayMismatchInfo mismatchInfo))
+            {
+                Debug.LogError($"SimulationDriver: Replay mismatch at tick {mismatchInfo.Tick}, expected hash {mismatchInfo.ExpectedHash}, actual hash {mismatchInfo.ActualHash}.");
+            }
+        }
+    }
+
+    private WorldSnapshot ResolveInput(WorldSnapshot world, InputFrame inputFrame)
+    {
         bool shouldFire = PlayerSimulator.ShouldFire(world.Player, inputFrame);
         WorldSnapshot nextWorld = WorldSimulator.Step(world, inputFrame);
         if(shouldFire)  // 生成新子弹
@@ -444,6 +523,90 @@ public class SimulationDriver : MonoBehaviour
         );
     }
 
+    // 记录场景初始状态
+    private void CacheInitialSceneState(PlayerController playerController)
+    {
+        _initialPlayerPosition = playerController.transform.position;
+        _initialSceneEnemies.Clear();
+        _initialEnemyPositions.Clear();
+
+        EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
+        Array.Sort(sceneEnemies, (a, b) => string.CompareOrdinal(GetTransformPath(a.transform), GetTransformPath(b.transform)));
+        for(int i = 0; i < sceneEnemies.Length; i++)
+        {
+            EnemyBase enemy = sceneEnemies[i];
+            _initialSceneEnemies.Add(enemy);
+            _initialEnemyPositions[GetTransformPath(enemy.transform)] = enemy.transform.position;
+        }
+    }
+
+    // 载入场景初始状态
+    private void ResetSimulationWorld(PlayerController playerController)
+    {
+        _worldTick = 0;
+        _accumulator = 0f;
+        _nextBulletEntityID = 1;
+        _nextEnemyEntityID = 1;
+        _enemyDieInTick.Clear();
+
+        ClearBulletViews();
+        RestoreSceneActors(playerController);
+
+        PlayerSimState initialPlayer = new PlayerSimState(
+            _playerID,
+            new FixVector3((Fix64)_initialPlayerPosition.x, (Fix64)_initialPlayerPosition.y, (Fix64)_initialPlayerPosition.z),
+            new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
+            config.PlayerMaxHp,
+            config.PlayerHitRadius,
+            true,
+            0,
+            0,
+            0);
+
+        _playerViews[_playerID] = playerController;
+        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], GetEnemySimStates());
+        OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
+    }
+
+    // 载入初始场景对象
+    private void RestoreSceneActors(PlayerController playerController)
+    {
+        playerController.gameObject.SetActive(true);
+        playerController.transform.position = _initialPlayerPosition;
+
+        for(int i = 0; i < _initialSceneEnemies.Count; i++)
+        {
+            EnemyBase enemy = _initialSceneEnemies[i];
+            if(enemy == null)
+            {
+                continue;
+            }
+
+            string path = GetTransformPath(enemy.transform);
+            if(_initialEnemyPositions.TryGetValue(path, out Vector3 initialPosition))
+            {
+                enemy.gameObject.SetActive(true);
+                enemy.transform.position = initialPosition;
+            }
+        }
+    }
+
+    private void ClearBulletViews()
+    {
+        if(BulletManager.Instance != null)
+        {
+            foreach(KeyValuePair<int, Bullet> pair in _bulletViews)
+            {
+                if(pair.Value != null)
+                {
+                    BulletManager.Instance.RecycleBullet(pair.Value);
+                }
+            }
+        }
+
+        _bulletViews.Clear();
+    }
+
     private EnemySimState[] GetEnemySimStates()
     {
         EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
@@ -464,7 +627,7 @@ public class SimulationDriver : MonoBehaviour
         return enemySimStates.ToArray();
     }
 
-    //获取Transform路径，作为唯一标识
+    //获取Transform路径
     private static string GetTransformPath(Transform current)
     {
         string path = current.name;

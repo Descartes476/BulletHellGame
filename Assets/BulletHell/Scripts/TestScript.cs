@@ -1,39 +1,38 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+public class TestClass
+{
+    public int testNum = 0;
+}
+
 public class TestScript : MonoBehaviour
 {
-    public GameObject prefabBullet;
-    public ObjectPool BulletPool;
-    private readonly List<GameObject> activeBullets = new List<GameObject>();
-    // Start is called before the first frame update
+    public TestClass[] testFunc(TestClass[] tcArr)
+    {
+        int i = 0;
+        foreach(var tc in tcArr)
+        {
+            tc.testNum = ++i;
+        }
+        tcArr = null;
+        return tcArr;
+    }
+    
     void Start()
     {
-        if(prefabBullet == null)
+        TestClass[] tcArr = new TestClass[10];
+        for(int i = 0; i < tcArr.Length; i++)
         {
-            Debug.LogError("prfabBullet is null");
-            return;
+            tcArr[i] = new TestClass();
         }
-        BulletPool = new ObjectPool(prefabBullet, transform, 10);
-        for(int i = 0; i < 20; i++)
-        {
-            print("创建Bullet"+i);
-            GameObject bullet = BulletPool.Get();
-            bullet.transform.position = new Vector3(i, 0, 0);
-            bullet.SetActive(true);
-            activeBullets.Add(bullet);
-        }
-        for(int i = 0; i < activeBullets.Count; i++)
-        {
-            BulletPool.Return(activeBullets[i]);   
-        }
-        activeBullets.Clear();
+        TestClass[] newTcArr = (TestClass[])tcArr.Clone();
+        print(object.ReferenceEquals(newTcArr, tcArr));
+        int [] intArr = new int[10];
+        int[] newIntArr = intArr;
+        print(object.ReferenceEquals(intArr, newIntArr));
     }
 
-    private void OnDestroy()
-    {
-        activeBullets.Clear();
-    }
-   
 }
