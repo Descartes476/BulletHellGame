@@ -7,6 +7,8 @@ public class EnemySpawner : MonoBehaviour
     [SerializeField]
     private int initialCount = 3;
     [SerializeField]
+    private int seed = 1;
+    [SerializeField]
     private Vector2 spawnMin = new Vector2(-6f, 1f);
     [SerializeField]
     private Vector2 spawnMax = new Vector2(6f, 4f);
@@ -21,16 +23,18 @@ public class EnemySpawner : MonoBehaviour
         }
 
         int count = Mathf.Max(0, initialCount);
-        float minX = Mathf.Min(spawnMin.x, spawnMax.x);
-        float maxX = Mathf.Max(spawnMin.x, spawnMax.x);
-        float minY = Mathf.Min(spawnMin.y, spawnMax.y);
-        float maxY = Mathf.Max(spawnMin.y, spawnMax.y);
+        Fix64 minX = (Fix64)Mathf.Min(spawnMin.x, spawnMax.x);
+        Fix64 maxX = (Fix64)Mathf.Max(spawnMin.x, spawnMax.x);
+        Fix64 minY = (Fix64)Mathf.Min(spawnMin.y, spawnMax.y);
+        Fix64 maxY = (Fix64)Mathf.Max(spawnMin.y, spawnMax.y);
+        DeterministicRandom random = new DeterministicRandom(unchecked((uint)seed));
 
         for (int i = 0; i < count; i++)
         {
-            float x = Random.Range(minX, maxX);
-            float y = Random.Range(minY, maxY);
-            Instantiate(enemyPrefab, new Vector3(x, y, 0f), Quaternion.identity, transform);
+            Fix64 x = random.RangeFix(minX, maxX);
+            Fix64 y = random.RangeFix(minY, maxY);
+            Vector3 spawnPosition = new Vector3((float)x, (float)y, 0f);
+            Instantiate(enemyPrefab, spawnPosition, Quaternion.identity, transform);
         }
     }
 }
