@@ -23,18 +23,14 @@ public class SimulationDriver : MonoBehaviour
     private IInputSource _inputSource;
     // 当前模拟运行模式
     private SimulationRunMode _runMode = SimulationRunMode.Live;
-    // 当前 tick 对应的世界快照
-    private WorldSnapshot _currentWorld;
+    // 统一的确定性仿真推进器
+    private DeterministicSimulationRunner _runner;
     // 实时模式下用于录制回放数据的记录器
     private ReplayRecorder _recorder;
     // 回放模式下用于校验世界状态的校验器
     private ReplayVerifier _verifier;
     // 帧时间累积器，用于按固定tick推进模拟
     private float _accumulator;
-    // 当前世界推进到的tick编号
-    private int _worldTick;
-    // 下一个可分配的子弹实体ID
-    private int _nextBulletEntityID = 1;
     // 下一个可分配的敌人实体ID
     private int _nextEnemyEntityID = 1;
     // 玩家实体使用的固定ID
@@ -52,8 +48,6 @@ public class SimulationDriver : MonoBehaviour
     private Dictionary<int, EnemyBase> _enemyViews = new Dictionary<int, EnemyBase>();
     // 玩家实体ID到显示对象的映射
     private Dictionary<int, PlayerController> _playerViews = new Dictionary<int, PlayerController>();
-    // 当前 tick 内被击杀的敌人 ID 集合
-    private HashSet<int> _enemyDieInTick = new HashSet<int>();
 
     public static event System.Action<int, int> OnPlayerHpChanged;
     public static event System.Action<int, int> OnPlayerSpawned;
@@ -66,7 +60,6 @@ public class SimulationDriver : MonoBehaviour
     void Start()
     {
         Instance = this;
-        _worldTick = 0;
         _accumulator = 0f;
 
         if (defaultConfigAsset == null)
@@ -102,9 +95,13 @@ public class SimulationDriver : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        WorldSnapshot oldWorld = _currentWorld;
         if (config.TickRate <= 0)
             return;
+
+        if (_runner == null)
+            return;
+
+        WorldSnapshot oldWorld = _runner.CurrentWorld;
 
         float tickInterval = 1f / config.TickRate;
         _accumulator += Time.deltaTime;
@@ -112,41 +109,33 @@ public class SimulationDriver : MonoBehaviour
         while (_accumulator >= tickInterval)
         {
             InputFrame inputFrame;
-            if(!TryGetCurrentInput(out inputFrame))
+            if (!TryGetCurrentInput(out inputFrame))
             {
-                if(_runMode == SimulationRunMode.Replay && _worldTick > _inputSource.GetRecordMaxTick())
+                if (_runMode == SimulationRunMode.Replay && _runner.Tick > _inputSource.GetRecordMaxTick())
                 {
                     Debug.Log("SimulationDriver: Replay Finished.");
                     StopReplayAndReturnToLive();
                     return;
                 }
-                Debug.LogError($"SimulationDriver: Failed to get input for tick {_worldTick}.");
+                Debug.LogError($"SimulationDriver: Failed to get input for tick {_runner.Tick}.");
                 return;
             }
 
-            // 推进输入与世界状态
-            WorldSnapshot nextWorld = ResolveInput(_currentWorld, inputFrame);
-            // 生成敌方子弹
-            nextWorld = ResolveEnemyFire(nextWorld);
-            // 结算玩家子弹命中
-            nextWorld = ResolvePlayerBulletHits(nextWorld);
-            // 结算敌方子弹命中
-            nextWorld = ResolveEnemyBulletHits(nextWorld);
-            ProcessReplayFrameResult(inputFrame, _currentWorld);
-            _currentWorld = nextWorld;
-            _worldTick = _currentWorld.Tick;
+            ProcessReplayFrameResult(inputFrame, _runner.CurrentWorld);
+            _runner.Step(inputFrame);
 
             _accumulator -= tickInterval;
             ResolveEnemyDied();
         }
-        
-        SyncPlayerView(oldWorld.Player, _currentWorld.Player);
-        SyncBulletViews(_currentWorld.Bullets);
-        SyncEnemyView(_currentWorld.Enemies);
-        
-        if(Input.GetMouseButtonDown(1))
+
+        WorldSnapshot newWorld = _runner.CurrentWorld;
+        SyncPlayerView(oldWorld.Player, newWorld.Player);
+        SyncBulletViews(newWorld.Bullets);
+        SyncEnemyView(newWorld.Enemies);
+
+        if (Input.GetMouseButtonDown(1))
         {
-            if(_recorder != null)
+            if (_recorder != null)
             {
                 ReplayData replayData = _recorder.EndRecording();
                 TryStartReplay(replayData);
@@ -161,14 +150,18 @@ public class SimulationDriver : MonoBehaviour
     //触发敌人死亡事件
     private void ResolveEnemyDied()
     {
-        foreach(var enemyId in _enemyDieInTick)
+        if (_runner == null)
         {
-            if(GameManager.Instance != null)
+            return;
+        }
+
+        foreach (var enemyId in _runner.EnemyDiedEntityIds)
+        {
+            if (GameManager.Instance != null)
             {
                 GameManager.Instance.TriggerEnemyDied(enemyId);
             }
         }
-        _enemyDieInTick.Clear();
     }
 
     private void SyncBulletViews(BulletSimState[] bullets)
@@ -208,7 +201,6 @@ public class SimulationDriver : MonoBehaviour
 
                 bulletView.transform.position = bullet.Position.ToVector3();
             }
-
         }
 
         int[] toRemove = _bulletViews.Keys.Where(id => !activeBulletIds.Contains(id)).ToArray();
@@ -222,25 +214,24 @@ public class SimulationDriver : MonoBehaviour
 
             _bulletViews.Remove(id);
         }
-        
     }
 
     private void SyncEnemyView(EnemySimState[] enemies)
     {
-        for(int i=0; i<enemies.Length; i++)
+        for (int i = 0; i < enemies.Length; i++)
         {
             var enemy = enemies[i];
-            if(!_enemyViews.TryGetValue(enemy.EntityId, out EnemyBase enemyView))
+            if (!_enemyViews.TryGetValue(enemy.EntityId, out EnemyBase enemyView))
             {
                 continue;
             }
-            if(enemyView == null)
+            if (enemyView == null)
             {
                 continue;
             }
-            if(!enemy.IsAlive)
+            if (!enemy.IsAlive)
             {
-                if(enemyView.gameObject.activeSelf)
+                if (enemyView.gameObject.activeSelf)
                 {
                     enemyView.gameObject.SetActive(false);
                 }
@@ -253,19 +244,19 @@ public class SimulationDriver : MonoBehaviour
     private void SyncPlayerView(PlayerSimState oldPlayerState, PlayerSimState newPlayerState)
     {
         PlayerController playerController;
-        if(!_playerViews.TryGetValue(_playerID, out playerController))
+        if (!_playerViews.TryGetValue(_playerID, out playerController))
         {
             Debug.LogError("SimulationDriver: PlayerController was not found.");
             return;
         }
         PlayerBase playerBase = playerController.GetComponent<PlayerBase>();
-        if(!playerBase)
+        if (!playerBase)
         {
             Debug.LogError("SimulationDriver: PlayerBase was not found.");
             return;
         }
         // 玩家死亡、复活事件触发
-        if(!newPlayerState.IsAlive)
+        if (!newPlayerState.IsAlive)
         {
             playerController.gameObject.SetActive(false);
             OnPlayerRespawnCountDownChanged?.Invoke(newPlayerState.RespawnCountdownTicks);
@@ -274,7 +265,7 @@ public class SimulationDriver : MonoBehaviour
         {
             playerController.gameObject.SetActive(true);
             playerBase.UpdateInvincibleVisual(newPlayerState.IsInvincible);
-            if(!oldPlayerState.IsAlive)
+            if (!oldPlayerState.IsAlive)
             {
                 OnPlayerRespawnCountDownChanged?.Invoke(newPlayerState.RespawnCountdownTicks);
                 OnPlayerSpawned?.Invoke((int)newPlayerState.Hp, (int)config.PlayerMaxHp);
@@ -282,7 +273,7 @@ public class SimulationDriver : MonoBehaviour
         }
 
         // HUD血量
-        if(oldPlayerState.Hp != newPlayerState.Hp)
+        if (oldPlayerState.Hp != newPlayerState.Hp)
         {
             // 触发血量变化事件
             OnPlayerHpChanged?.Invoke((int)newPlayerState.Hp, (int)config.PlayerMaxHp);
@@ -294,7 +285,7 @@ public class SimulationDriver : MonoBehaviour
 
     public bool TryGetPlayerHudState(out int currentHp, out int maxHp, out int respawnCountdownTicks)
     {
-        if (config.TickRate <= 0)
+        if (_runner == null)
         {
             currentHp = 0;
             maxHp = 0;
@@ -302,31 +293,37 @@ public class SimulationDriver : MonoBehaviour
             return false;
         }
 
-        currentHp = (int)_currentWorld.Player.Hp;
+        currentHp = (int)_runner.CurrentWorld.Player.Hp;
         maxHp = (int)config.PlayerMaxHp;
-        respawnCountdownTicks = _currentWorld.Player.RespawnCountdownTicks;
+        respawnCountdownTicks = _runner.CurrentWorld.Player.RespawnCountdownTicks;
         return true;
     }
 
     private bool TryGetCurrentInput(out InputFrame inputFrame)
     {
-        if(_inputSource == null)
+        if (_inputSource == null)
         {
             inputFrame = default;
             return false;
         }
 
-        return _inputSource.TryGetInput(_worldTick, out inputFrame);
+        if (_runner == null)
+        {
+            inputFrame = default;
+            return false;
+        }
+
+        return _inputSource.TryGetInput(_runner.Tick, out inputFrame);
     }
 
     public void SetLiveMode(PlayerController playerController = null)
     {
-        if(playerController == null)
+        if (playerController == null)
         {
             _playerViews.TryGetValue(_playerID, out playerController);
         }
 
-        if(playerController == null)
+        if (playerController == null)
         {
             Debug.LogError("SimulationDriver: PlayerController was not found when switching to live mode.");
             _inputSource = null;
@@ -343,18 +340,18 @@ public class SimulationDriver : MonoBehaviour
 
     public bool SetReplayMode(ReplayData replayData)
     {
-        if(replayData == null)
+        if (replayData == null)
         {
             Debug.LogError("SimulationDriver: ReplayData is null.");
             return false;
         }
 
-        if(!IsReplayConfigCompatible(replayData))
+        if (!IsReplayConfigCompatible(replayData))
         {
             return false;
         }
 
-        if(!_playerViews.TryGetValue(_playerID, out PlayerController playerController) || playerController == null)
+        if (!_playerViews.TryGetValue(_playerID, out PlayerController playerController) || playerController == null)
         {
             Debug.LogError("SimulationDriver: PlayerController was not found when switching to replay mode.");
             return false;
@@ -374,197 +371,20 @@ public class SimulationDriver : MonoBehaviour
     private void ProcessReplayFrameResult(InputFrame inputFrame, WorldSnapshot world)
     {
         ulong worldHash = WorldStateHasher.Compute(world);
-
-        if(_runMode == SimulationRunMode.Live)
+        // 记录模式，记录当前世界状态
+        if (_runMode == SimulationRunMode.Live)
         {
             _recorder?.RecordFrame(world.Tick, inputFrame, worldHash);
             return;
         }
-
-        if(_runMode == SimulationRunMode.Replay && _verifier != null)
+        // 回放模式，校验当前世界状态
+        if (_runMode == SimulationRunMode.Replay && _verifier != null)
         {
-            if(!_verifier.Verify(world.Tick, worldHash, out ReplayMismatchInfo mismatchInfo))
+            if (!_verifier.Verify(world.Tick, worldHash, out ReplayMismatchInfo mismatchInfo))
             {
                 Debug.LogError($"SimulationDriver: Replay mismatch at tick {mismatchInfo.Tick}, expected hash {mismatchInfo.ExpectedHash}, actual hash {mismatchInfo.ActualHash}.");
             }
         }
-    }
-
-    private WorldSnapshot ResolveInput(WorldSnapshot world, InputFrame inputFrame)
-    {
-        bool shouldFire = PlayerSimulator.ShouldFire(world.Player, inputFrame);
-        WorldSnapshot nextWorld = WorldSimulator.Step(world, inputFrame);
-        if(shouldFire)  // 生成新子弹
-        {
-            int bulletEntityID = _nextBulletEntityID++;
-            FixVector3 bulletPosition = nextWorld.Player.Position;
-            FixVector3 fallbackDirection = world.Player.AimDirection.GetNormalizedOr(new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero));
-            // 归一化，目标太近则给一个默认方向
-            FixVector3 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
-
-            BulletSimState bullet = new BulletSimState(
-                bulletEntityID,
-                bulletPosition,
-                bulletDirection,
-                config.PlayerBulletSpeed,
-                config.PlayerBulletDamage,
-                config.PlayerBulletHitRadius,
-                config.PlayerBulletLifetimeTicks,
-                BulletFaction.Player
-            );
-            var nextWorldBullets = nextWorld.Bullets;
-            BulletSimState[] newBullets = new BulletSimState[nextWorldBullets.Length + 1];
-            Array.Copy(nextWorldBullets, newBullets, nextWorldBullets.Length);
-            newBullets[nextWorldBullets.Length] = bullet;
-            nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Player, newBullets, nextWorld.Enemies);
-        }
-        return nextWorld;
-    }
-
-    // 敌人开火生成子弹
-    private WorldSnapshot ResolveEnemyFire(WorldSnapshot world)
-    {
-        EnemySimState[] enemies = (EnemySimState[])world.Enemies.Clone();
-        List<BulletSimState> bulletSims = new List<BulletSimState>();
-        bulletSims.AddRange(world.Bullets);
-        for(int i=0; i<enemies.Length; i++)
-        {
-            var enemy = enemies[i];
-            if(!enemy.IsAlive)
-            {
-                continue;
-            }
-            int coolDownTick = enemy.FireCooldownTicks;
-            if(enemy.CanFire)
-            {
-                int bulletEntityID = _nextBulletEntityID++;
-                FixVector3 bulletPosition = enemy.Position;
-                FixVector3 aimDirection = world.Player.Position - enemy.Position;
-                aimDirection = aimDirection.GetNormalizedOr(new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero));
-                BulletSimState bullet = new BulletSimState(
-                    bulletEntityID,
-                    bulletPosition,
-                    aimDirection,
-                    config.EnemyBulletSpeed,
-                    config.EnemyBulletDamage,
-                    config.EnemyBulletHitRadius,
-                    config.EnemyBulletLifetimeTicks,
-                    BulletFaction.Enemy
-                );
-                bulletSims.Add(bullet);
-                coolDownTick = config.EnemyFireIntervalTicks;
-            }
-            enemies[i] = new EnemySimState(
-                enemy.EntityId,
-                enemy.Position,
-                enemy.MoveDirection,
-                enemy.Hp,
-                enemy.MaxHp,
-                enemy.HitRadius,
-                enemy.Speed,
-                coolDownTick
-            );
-        }
-        return new WorldSnapshot(
-            world.Tick,
-            world.Config,
-            world.Player,
-            bulletSims.ToArray(),
-            enemies
-        );
-    }
-
-    private WorldSnapshot ResolvePlayerBulletHits(WorldSnapshot world)
-    {
-        var bulletSims = world.Bullets;
-        var enemies = (EnemySimState[])world.Enemies.Clone();
-        List<BulletSimState> bulletsNotHit = new List<BulletSimState>();
-        for(int i=0; i<bulletSims.Length; i++)
-        {
-            BulletSimState bullet = bulletSims[i];
-            if (bullet.Faction != BulletFaction.Player || !TryHitEnemy(bullet, enemies))
-            {
-                bulletsNotHit.Add(bullet);
-            }
-        }
-        WorldSnapshot worldSnapshot = new WorldSnapshot
-        (
-            world.Tick,
-            world.Config,
-            world.Player,
-            bulletsNotHit.ToArray(),
-            enemies
-        );
-        return worldSnapshot;
-    }
-
-    // 处理敌方子弹对玩家的命中结算，并移除命中的敌方子弹
-    private WorldSnapshot ResolveEnemyBulletHits(WorldSnapshot world)
-    {
-        PlayerSimState player = world.Player;
-        if(!player.IsAlive)
-        {
-            return world;
-        }
-        BulletSimState[] bulletSims = world.Bullets;
-        bool isAlive = player.IsAlive;
-        Fix64 nextHp = player.Hp;
-        int respawnCountdownTicks = player.RespawnCountdownTicks;
-        int invincibleTicks = player.InvincibleTicks;
-        List<BulletSimState> bulletsNotHit = new List<BulletSimState>();
-        for(int i=0; i<bulletSims.Length; i++)
-        {
-            BulletSimState bullet = bulletSims[i];
-            if(bullet.Faction == BulletFaction.Enemy && isAlive) // 避免循环中死亡还吃子弹
-            {
-                // 计算玩家受击
-                FixVector3 playerPos = player.Position;
-                FixVector3 bulletPos = bullet.Position;   
-                FixVector3 d = playerPos - bulletPos;
-                Fix64 sqrDistanceInPanel = d.x * d.x + d.y * d.y;
-                Fix64 r = bullet.Radius + player.HitRadius;
-                if (sqrDistanceInPanel <= r * r)
-                {
-                    if(!player.IsInvincible)
-                    {
-                        nextHp -= bullet.Damage;
-                        if(nextHp <= Fix64.Zero)
-                        {
-                            isAlive = false;
-                            nextHp = Fix64.Zero;
-                            respawnCountdownTicks = config.PlayerRespawnTicks;
-                            invincibleTicks = 0;
-                        }
-                    }
-                }
-                else
-                {
-                    bulletsNotHit.Add(bullet);
-                }
-            }
-            else
-            {
-                bulletsNotHit.Add(bullet);
-            }
-        }
-        player = new PlayerSimState(
-            player.EntityId,
-            player.Position,
-            player.AimDirection,
-            nextHp,
-            player.HitRadius,
-            isAlive,
-            player.FireCooldownTicks,
-            respawnCountdownTicks,
-            invincibleTicks
-        );
-        return new WorldSnapshot(
-            world.Tick,
-            world.Config,
-            player,
-            bulletsNotHit.ToArray(),
-            world.Enemies
-        );
     }
 
     // 当前配置与记录配置校验
@@ -572,43 +392,43 @@ public class SimulationDriver : MonoBehaviour
     {
         ReplayConfigSnapshot snapshot = replayData.ConfigSnapshot;
 
-        if(snapshot.TickRate != config.TickRate)
+        if (snapshot.TickRate != config.TickRate)
         {
             Debug.LogError($"SimulationDriver: Replay TickRate mismatch. Replay={snapshot.TickRate}, Current={config.TickRate}.");
             return false;
         }
 
-        if(snapshot.PlayerMoveSpeedRaw != config.PlayerMoveSpeed.RawValue)
+        if (snapshot.PlayerMoveSpeedRaw != config.PlayerMoveSpeed.RawValue)
         {
             Debug.LogError($"SimulationDriver: Replay PlayerMoveSpeed mismatch. Replay={snapshot.PlayerMoveSpeedRaw}, Current={config.PlayerMoveSpeed.RawValue}.");
             return false;
         }
 
-        if(snapshot.PlayerBulletSpeedRaw != config.PlayerBulletSpeed.RawValue)
+        if (snapshot.PlayerBulletSpeedRaw != config.PlayerBulletSpeed.RawValue)
         {
             Debug.LogError($"SimulationDriver: Replay PlayerBulletSpeed mismatch. Replay={snapshot.PlayerBulletSpeedRaw}, Current={config.PlayerBulletSpeed.RawValue}.");
             return false;
         }
 
-        if(snapshot.EnemyBulletSpeedRaw != config.EnemyBulletSpeed.RawValue)
+        if (snapshot.EnemyBulletSpeedRaw != config.EnemyBulletSpeed.RawValue)
         {
             Debug.LogError($"SimulationDriver: Replay EnemyBulletSpeed mismatch. Replay={snapshot.EnemyBulletSpeedRaw}, Current={config.EnemyBulletSpeed.RawValue}.");
             return false;
         }
 
-        if(snapshot.PlayerMaxHpRaw != config.PlayerMaxHp.RawValue)
+        if (snapshot.PlayerMaxHpRaw != config.PlayerMaxHp.RawValue)
         {
             Debug.LogError($"SimulationDriver: Replay PlayerMaxHp mismatch. Replay={snapshot.PlayerMaxHpRaw}, Current={config.PlayerMaxHp.RawValue}.");
             return false;
         }
 
-        if(snapshot.PlayerRespawnTicks != config.PlayerRespawnTicks)
+        if (snapshot.PlayerRespawnTicks != config.PlayerRespawnTicks)
         {
             Debug.LogError($"SimulationDriver: Replay PlayerRespawnTicks mismatch. Replay={snapshot.PlayerRespawnTicks}, Current={config.PlayerRespawnTicks}.");
             return false;
         }
 
-        if(snapshot.PlayerInvincibleTicks != config.PlayerInvincibleTicks)
+        if (snapshot.PlayerInvincibleTicks != config.PlayerInvincibleTicks)
         {
             Debug.LogError($"SimulationDriver: Replay PlayerInvincibleTicks mismatch. Replay={snapshot.PlayerInvincibleTicks}, Current={config.PlayerInvincibleTicks}.");
             return false;
@@ -628,14 +448,14 @@ public class SimulationDriver : MonoBehaviour
         Array.Sort(sceneEnemies, (a, b) =>
         {
             int pathCompare = string.CompareOrdinal(GetTransformPath(a.transform), GetTransformPath(b.transform));
-            if(pathCompare != 0)
+            if (pathCompare != 0)
             {
                 return pathCompare;
             }
 
             return a.transform.GetSiblingIndex().CompareTo(b.transform.GetSiblingIndex());
         });
-        for(int i = 0; i < sceneEnemies.Length; i++)
+        for (int i = 0; i < sceneEnemies.Length; i++)
         {
             EnemyBase enemy = sceneEnemies[i];
             _initialSceneEnemies.Add(enemy);
@@ -643,14 +463,10 @@ public class SimulationDriver : MonoBehaviour
         }
     }
 
-    // 载入场景初始状态
     private void ResetSimulationWorld(PlayerController playerController)
     {
-        _worldTick = 0;
         _accumulator = 0f;
-        _nextBulletEntityID = 1;
         _nextEnemyEntityID = 1;
-        _enemyDieInTick.Clear();
 
         ClearBulletViews();
         RestoreSceneActors(playerController);
@@ -668,7 +484,8 @@ public class SimulationDriver : MonoBehaviour
 
         _playerViews[_playerID] = playerController;
         var enemies = GetEnemySimStates();
-        _currentWorld = new WorldSnapshot(_worldTick, config, initialPlayer, new BulletSimState[0], enemies);
+        WorldSnapshot initialWorld = new WorldSnapshot(0, config, initialPlayer, new BulletSimState[0], enemies);
+        _runner = new DeterministicSimulationRunner(initialWorld, config);
         OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
     }
 
@@ -678,15 +495,15 @@ public class SimulationDriver : MonoBehaviour
         playerController.gameObject.SetActive(true);
         playerController.transform.position = _initialPlayerPosition;
 
-        for(int i = 0; i < _initialSceneEnemies.Count; i++)
+        for (int i = 0; i < _initialSceneEnemies.Count; i++)
         {
             EnemyBase enemy = _initialSceneEnemies[i];
-            if(enemy == null)
+            if (enemy == null)
             {
                 continue;
             }
 
-            if(_initialEnemyPositions.TryGetValue(enemy, out Vector3 initialPosition))
+            if (_initialEnemyPositions.TryGetValue(enemy, out Vector3 initialPosition))
             {
                 enemy.gameObject.SetActive(true);
                 enemy.transform.position = initialPosition;
@@ -696,11 +513,11 @@ public class SimulationDriver : MonoBehaviour
 
     private void ClearBulletViews()
     {
-        if(BulletManager.Instance != null)
+        if (BulletManager.Instance != null)
         {
-            foreach(KeyValuePair<int, Bullet> pair in _bulletViews)
+            foreach (KeyValuePair<int, Bullet> pair in _bulletViews)
             {
-                if(pair.Value != null)
+                if (pair.Value != null)
                 {
                     BulletManager.Instance.RecycleBullet(pair.Value);
                 }
@@ -712,7 +529,7 @@ public class SimulationDriver : MonoBehaviour
 
     public bool TryStartReplay(ReplayData replaydata)
     {
-        if(_runMode == SimulationRunMode.Live)
+        if (_runMode == SimulationRunMode.Live)
         {
             return SetReplayMode(replaydata);
         }
@@ -728,10 +545,10 @@ public class SimulationDriver : MonoBehaviour
     {
         List<EnemySimState> enemySimStates = new List<EnemySimState>();
         _enemyViews.Clear();
-        for(int i=0; i<_initialSceneEnemies.Count; i++)
+        for (int i = 0; i < _initialSceneEnemies.Count; i++)
         {
             EnemyBase enemy = _initialSceneEnemies[i];
-            if(enemy == null)
+            if (enemy == null)
             {
                 continue;
             }
@@ -758,52 +575,4 @@ public class SimulationDriver : MonoBehaviour
 
         return path;
     }
-
-    private bool TryHitEnemy(BulletSimState bullet, EnemySimState[] enemies)
-    {
-        if (enemies == null || enemies.Length == 0)
-            return false;
-
-        FixVector3 bulletPos = bullet.Position;
-        Fix64 bulletR = bullet.Radius;
-
-        for (int i = 0; i < enemies.Length; i++)
-        {
-            var enemy = enemies[i];
-            if (!enemy.IsAlive)
-            {
-                continue;
-            }
-
-            FixVector3 enemyPos = enemy.Position;
-
-            Fix64 r = bulletR + enemy.HitRadius;
-            FixVector3 d = enemyPos - bulletPos;
-            Fix64 sqrDistanceInPanel = d.x * d.x + d.y * d.y;
-            if (sqrDistanceInPanel <= r * r)
-            {
-                var nextHp = enemy.Hp;
-                nextHp -= bullet.Damage;
-                if(nextHp <= Fix64.Zero)
-                {
-                    nextHp = Fix64.Zero;
-                    _enemyDieInTick.Add(enemy.EntityId);
-                }
-                enemies[i] = new EnemySimState(
-                    enemy.EntityId,
-                    enemy.Position,
-                    enemy.MoveDirection,
-                    nextHp,
-                    enemy.MaxHp,
-                    enemy.HitRadius,
-                    enemy.Speed,
-                    enemy.FireCooldownTicks
-                );
-                return true;
-            }
-        }
-
-        return false;
-    }
-
 }
