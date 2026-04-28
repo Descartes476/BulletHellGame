@@ -1,4 +1,5 @@
 
+using System;
 using BulletHell.Simulation.Core;
 
 public static class WorldStateHasher
@@ -6,7 +7,6 @@ public static class WorldStateHasher
     public static ulong Compute(in WorldSnapshot world)
     {
         StableHashBuilder builder = new StableHashBuilder(0);
-
         builder.Add(world.Tick);
         AppendPlayer(ref builder, world.Player);
 

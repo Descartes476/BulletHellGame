@@ -1,11 +1,10 @@
-using BulletHell.Simulation.Core;
 
 public struct StableHashBuilder
 {
     private const ulong OffsetBasis = 14695981039346656037UL;
     private const ulong Prime = 1099511628211UL;
 
-    private ulong _value;
+    public ulong _value;
 
     public StableHashBuilder(ulong seed)
     {
