@@ -15,8 +15,8 @@ public class LocalDualSimulationVerifier
 {
     public DualSimVerificationResult Verify(ReplayData replayData, WorldSnapshot initialWorld, SimulationConfig config)
     {
-        var runnerA = new DeterministicSimulationRunner(initialWorld, config);
-        var runnerB = new DeterministicSimulationRunner(initialWorld, config);
+        var runnerA = new DeterministicSimulationRunner(initialWorld, config, 0);
+        var runnerB = new DeterministicSimulationRunner(initialWorld, config, 0);
         
         // 检查初始 hash
         if (runnerA.CurrentHash != runnerB.CurrentHash)

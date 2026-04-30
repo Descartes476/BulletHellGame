@@ -5,7 +5,7 @@ public sealed class ReplayRecorder
 {
     public ReplayData CurrentReplay { get; private set; }
 
-    public void BeginRecording(in SimulationConfig config, int seed)
+    public void BeginRecording(in SimulationConfig config, uint seed)
     {
         CurrentReplay = new ReplayData
         {

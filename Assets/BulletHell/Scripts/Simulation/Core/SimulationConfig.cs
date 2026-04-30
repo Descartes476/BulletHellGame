@@ -26,6 +26,7 @@ namespace BulletHell.Simulation.Core
         public Fix64 EnemyBulletHitRadius { get; } // 敌人子弹碰撞范围
         public Fix64 EnemyMoveSpeed { get; } // 敌人移动速度
         public Fix64 TickDeltaTime => TickRate > 0 ? Fix64.One / TickRate : Fix64.Zero;
+        public int EnemyMoveDecisionIntervalTicks { get; } // 敌人重新决策移动方向的间隔
 
         public SimulationConfig(
             int tickRate,
@@ -46,7 +47,8 @@ namespace BulletHell.Simulation.Core
             Fix64 enemyBulletDamage,
             int enemyBulletLifetimeTicks,
             Fix64 enemyBulletHitRadius,
-            Fix64 enemyMoveSpeed
+            Fix64 enemyMoveSpeed,
+            int enemyMoveDecisionIntervalTicks
         )
         {
             TickRate = tickRate;
@@ -71,6 +73,7 @@ namespace BulletHell.Simulation.Core
             EnemyBulletLifetimeTicks = enemyBulletLifetimeTicks;
             EnemyBulletHitRadius = enemyBulletHitRadius;
             EnemyMoveSpeed = enemyMoveSpeed;
+            EnemyMoveDecisionIntervalTicks = enemyMoveDecisionIntervalTicks;
         }
     }
 }

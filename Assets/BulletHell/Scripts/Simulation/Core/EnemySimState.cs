@@ -10,10 +10,19 @@ namespace BulletHell.Simulation.Core
         public Fix64 HitRadius { get; } // 受击范围
         public Fix64 Speed { get; } // 敌人速度
         public int FireCooldownTicks { get; } // 射击冷却
+        public int MoveDecisionCooldownTicks { get; } // 移动方向重新决策冷却
         public bool IsAlive => Hp > Fix64.Zero;
         public bool CanFire => FireCooldownTicks <= 0;
 
-        public EnemySimState(int entityId, FixVector3 position, FixVector3 moveDir, Fix64 hp, Fix64 maxHp, Fix64 hitRadius, Fix64 speed, int fireCooldownTicks)
+        public EnemySimState(int entityId,
+        FixVector3 position,
+        FixVector3 moveDir,
+        Fix64 hp,
+        Fix64 maxHp,
+        Fix64 hitRadius,
+        Fix64 speed,
+        int fireCooldownTicks,
+        int moveDecisionCooldownTicks)
         {
             EntityId = entityId;
             Position = position;
@@ -23,6 +32,7 @@ namespace BulletHell.Simulation.Core
             HitRadius = hitRadius;
             Speed = speed;
             FireCooldownTicks = fireCooldownTicks;
+            MoveDecisionCooldownTicks = moveDecisionCooldownTicks;
         }
     }
 }

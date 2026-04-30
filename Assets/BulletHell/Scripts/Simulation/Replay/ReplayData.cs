@@ -5,7 +5,7 @@ public sealed class ReplayData
 {
     public int Version;
     public int TickRate;
-    public int Seed;
+    public uint Seed;
     public ReplayConfigSnapshot ConfigSnapshot;
     public List<ReplayFrame> Frames;
 }

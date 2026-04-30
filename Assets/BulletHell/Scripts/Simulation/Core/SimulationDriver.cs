@@ -35,6 +35,8 @@ public class SimulationDriver : MonoBehaviour
     private int _nextEnemyEntityID = 1;
     // 玩家实体使用的固定ID
     private int _playerID = 1;
+    // 随机种子
+    private uint _seed = 0;
     // 场景初始时的玩家位置
     private Vector3 _initialPlayerPosition;
     // 场景初始时缓存的敌人对象列表
@@ -52,7 +54,6 @@ public class SimulationDriver : MonoBehaviour
     public SimulationRunMode RunMode => _runMode;
     public bool IsReplayRunning => _runMode == SimulationRunMode.Replay;
 
-    // Start is called before the first frame update
     void Start()
     {
         Instance = this;
@@ -90,7 +91,6 @@ public class SimulationDriver : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
     void Update()
     {
         if (config.TickRate <= 0)
@@ -224,12 +224,12 @@ public class SimulationDriver : MonoBehaviour
                 return;
             }
         }
-
         _inputSource = new LiveInputSource(playerController);
         _runMode = SimulationRunMode.Live;
         _verifier = null;
         _recorder = new ReplayRecorder();
-        _recorder.BeginRecording(config, 0);
+        _seed = 1;
+        _recorder.BeginRecording(config, _seed);
         ResetSimulationWorld();
     }
 
@@ -248,6 +248,7 @@ public class SimulationDriver : MonoBehaviour
 
 
         _viewSyncManager.ResetSceneView(_playerID, _initialPlayerPosition, _initialSceneEnemies);
+        _seed = replayData.Seed;
         ResetSimulationWorld();
 
         _inputSource = new ReplayInputSource(replayData);
@@ -256,11 +257,6 @@ public class SimulationDriver : MonoBehaviour
         _verifier = new ReplayVerifier();
         _verifier.Load(replayData);
         return true;
-    }
-
-    public void Print(string s, ulong value)
-    {
-        Debug.Log(s+":"+value);
     }
 
     // 执行帧记录/回放校验
@@ -381,35 +377,8 @@ public class SimulationDriver : MonoBehaviour
             0);
         var enemies = GetEnemySimStates();
         WorldSnapshot initialWorld = new WorldSnapshot(0, config, initialPlayer, new BulletSimState[0], enemies);
-        _runner = new DeterministicSimulationRunner(initialWorld, config);
+        _runner = new DeterministicSimulationRunner(initialWorld, config, _seed);
         OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
-    }
-
-    // 载入初始场景对象
-    private void RestoreSceneActors(PlayerController playerController)
-    {
-        playerController.gameObject.SetActive(true);
-        playerController.transform.position = _initialPlayerPosition;
-
-        for (int i = 0; i < _initialSceneEnemies.Count; i++)
-        {
-            EnemyBase enemy = _initialSceneEnemies[i];
-            if (enemy == null)
-            {
-                continue;
-            }
-
-            if (_initialEnemyPositions.TryGetValue(enemy, out Vector3 initialPosition))
-            {
-                enemy.gameObject.SetActive(true);
-                enemy.transform.position = initialPosition;
-            }
-        }
-    }
-
-    private void ClearBulletViews()
-    {
-        _viewSyncManager?.ClearBulletViews();
     }
 
     public bool TryStartReplay(ReplayData replaydata)
@@ -440,7 +409,16 @@ public class SimulationDriver : MonoBehaviour
             Vector3 pos = enemy.transform.position;
             FixVector3 fixPos = new FixVector3((Fix64)pos.x, (Fix64)pos.y, (Fix64)pos.z);
             int enemyEntityId = _nextEnemyEntityID;
-            EnemySimState enemySimState = new EnemySimState(enemyEntityId, fixPos, new FixVector3(Fix64.One, Fix64.Zero, Fix64.Zero), (Fix64)enemy.MaxHp, (Fix64)enemy.MaxHp, (Fix64)enemy.HitRadius, config.EnemyMoveSpeed, 0);
+            EnemySimState enemySimState = new EnemySimState(
+                enemyEntityId,
+                fixPos,
+                new FixVector3(Fix64.One, Fix64.Zero, Fix64.Zero),
+                (Fix64)enemy.MaxHp,
+                (Fix64)enemy.MaxHp,
+                (Fix64)enemy.HitRadius,
+                config.EnemyMoveSpeed,
+                0,
+                0);
             enemySimStates.Add(enemySimState);
             enemyViews[enemyEntityId] = enemy;
             _nextEnemyEntityID++;

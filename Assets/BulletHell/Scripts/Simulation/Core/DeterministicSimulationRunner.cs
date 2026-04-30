@@ -1,22 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using BulletHell.Simulation.Core;
 
 public class DeterministicSimulationRunner
 {
     private SimulationConfig _config;
     private WorldSnapshot _currentWorld;
+    private DeterministicRandom _random;
     int _nextBulletEntityID;
     private readonly List<int> _enemyDiedEntityIds = new List<int>();
     public ulong CurrentHash;
     int CurrentTick => _currentWorld.Tick;
 
-    public DeterministicSimulationRunner(WorldSnapshot world, SimulationConfig config)
+    public DeterministicSimulationRunner(WorldSnapshot world, SimulationConfig config, uint seed)
     {
         _currentWorld = world;
         _config = config;
         _nextBulletEntityID = 1;
         CurrentHash = WorldStateHasher.Compute(world);
+        _random = new DeterministicRandom(seed);
     }
 
     public WorldSnapshot CurrentWorld
@@ -52,7 +55,7 @@ public class DeterministicSimulationRunner
     private WorldSnapshot ResolveInput(WorldSnapshot world, InputFrame inputFrame)
     {
         bool shouldFire = PlayerSimulator.ShouldFire(world.Player, inputFrame);
-        WorldSnapshot nextWorld = WorldSimulator.Step(world, inputFrame);
+        WorldSnapshot nextWorld = WorldSimulator.Step(world, inputFrame, _random);
         if(shouldFire)  // 生成新子弹
         {
             int bulletEntityID = _nextBulletEntityID++;
@@ -121,7 +124,8 @@ public class DeterministicSimulationRunner
                 enemy.MaxHp,
                 enemy.HitRadius,
                 enemy.Speed,
-                coolDownTick
+                coolDownTick,
+                enemy.MoveDecisionCooldownTicks
             );
         }
         return new WorldSnapshot(
@@ -265,7 +269,8 @@ public class DeterministicSimulationRunner
                     enemy.MaxHp,
                     enemy.HitRadius,
                     enemy.Speed,
-                    enemy.FireCooldownTicks
+                    enemy.FireCooldownTicks,
+                    enemy.MoveDecisionCooldownTicks
                 );
                 return true;
             }
