@@ -16,7 +16,7 @@ MonoBehaviour:
   playerMoveSpeed: 8
   playerFireIntervalTicks: 18
   playerBulletSpeed: 10
-  playerBulletDamage: 1
+  playerBulletDamage: 10
   playerBulletLifetimeTicks: 180
   playerBulletHitRadius: 0.1
   playerHitRadius: 0.5
@@ -31,3 +31,4 @@ MonoBehaviour:
   enemyBulletLifetimeTicks: 180
   enemyBulletHitRadius: 0.1
   enemyMoveSpeed: 0.5
+  enemyMoveDirChangeTicks: 300

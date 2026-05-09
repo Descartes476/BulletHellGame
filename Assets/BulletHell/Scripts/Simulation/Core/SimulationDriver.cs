@@ -2,7 +2,6 @@ using UnityEngine;
 using BulletHell.Simulation.Core;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 public enum SimulationRunMode
 {
@@ -15,12 +14,17 @@ public class SimulationDriver : MonoBehaviour
     // 默认使用的模拟配置资源
     [SerializeField] private SimulationConfigAsset defaultConfigAsset;
 
+    private const int InputBufferLeadTicks = 2;
+    private const int LocalInputDelayTicks = 2;
     public static SimulationDriver Instance { get; private set; }
 
     // 当前运行时使用的模拟配置
     private SimulationConfig config;
-    // 当前模拟驱动使用的输入源
-    private IInputSource _inputSource;
+
+    private IInputSource _localInputSource;
+    private IInputSource _remoteInputSource;
+    private DualInputBuffer _dualInputBuffer;
+    private DualInputScheduler _inputScheduler;
     // 当前模拟运行模式
     private SimulationRunMode _runMode = SimulationRunMode.Live;
     // 统一的确定性仿真推进器
@@ -106,10 +110,14 @@ public class SimulationDriver : MonoBehaviour
 
         while (_accumulator >= tickInterval)
         {
-            InputFrame inputFrame;
-            if (!TryGetCurrentInput(out inputFrame))
+            _inputScheduler.Fill(_runner.Tick, _runMode);
+            if(!_inputScheduler.IsReady(_runner.Tick, _runMode))
             {
-                if (_runMode == SimulationRunMode.Replay && _runner.Tick > _inputSource.GetRecordMaxTick())
+                return;
+            }
+            if (!_inputScheduler.TryConsume(_runner.Tick, _runMode, out InputFrame inputFrame, out InputFrame remoteInput))
+            {
+                if (_runMode == SimulationRunMode.Replay && _runner.Tick > _inputScheduler.GetRecordMaxTick())
                 {
                     Debug.Log("SimulationDriver: Replay Finished.");
                     StopReplayAndReturnToLive();
@@ -175,7 +183,6 @@ public class SimulationDriver : MonoBehaviour
         }
     }
 
-
     public bool TryGetPlayerHudState(out int currentHp, out int maxHp, out int respawnCountdownTicks)
     {
         if (_runner == null)
@@ -192,23 +199,6 @@ public class SimulationDriver : MonoBehaviour
         return true;
     }
 
-    private bool TryGetCurrentInput(out InputFrame inputFrame)
-    {
-        if (_inputSource == null)
-        {
-            inputFrame = default;
-            return false;
-        }
-
-        if (_runner == null)
-        {
-            inputFrame = default;
-            return false;
-        }
-
-        return _inputSource.TryGetInput(_runner.Tick, out inputFrame);
-    }
-
     public void SetLiveMode(PlayerController playerController = null)
     {
         // playerController 参数为 null 时，从当前场景查找
@@ -220,11 +210,13 @@ public class SimulationDriver : MonoBehaviour
             if(playerController == null)
             {
                 Debug.LogError("SimulationDriver: PlayerController was not found when switching to live mode.");
-                _inputSource = null;
+                _localInputSource = null;
+                _remoteInputSource = null;
                 return;
             }
         }
-        _inputSource = new LiveInputSource(playerController);
+        _localInputSource = new LiveInputSource(playerController);
+        _remoteInputSource = new MockRemoteInputSource();
         _runMode = SimulationRunMode.Live;
         _verifier = null;
         _recorder = new ReplayRecorder();
@@ -249,13 +241,14 @@ public class SimulationDriver : MonoBehaviour
 
         _viewSyncManager.ResetSceneView(_playerID, _initialPlayerPosition, _initialSceneEnemies);
         _seed = replayData.Seed;
-        ResetSimulationWorld();
 
-        _inputSource = new ReplayInputSource(replayData);
+        _localInputSource = new ReplayInputSource(replayData);
+        _remoteInputSource = new MockRemoteInputSource();
         _runMode = SimulationRunMode.Replay;
         _recorder = null;
         _verifier = new ReplayVerifier();
         _verifier.Load(replayData);
+        ResetSimulationWorld();
         return true;
     }
 
@@ -359,6 +352,14 @@ public class SimulationDriver : MonoBehaviour
     {
         _accumulator = 0f;
         _nextEnemyEntityID = 1;
+        _dualInputBuffer = new DualInputBuffer();
+        _inputScheduler = new DualInputScheduler(
+            _dualInputBuffer,
+            _localInputSource,
+            _remoteInputSource,
+            LocalInputDelayTicks,
+            InputBufferLeadTicks
+        );
 
         _viewSyncManager?.ClearBulletViews();
         _viewSyncManager?.RestoreSceneActors(_playerID, _initialPlayerPosition,
@@ -378,6 +379,10 @@ public class SimulationDriver : MonoBehaviour
         var enemies = GetEnemySimStates();
         WorldSnapshot initialWorld = new WorldSnapshot(0, config, initialPlayer, new BulletSimState[0], enemies);
         _runner = new DeterministicSimulationRunner(initialWorld, config, _seed);
+        if(_runMode == SimulationRunMode.Live)
+        {
+            _inputScheduler.WarmupLive();
+        }
         OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
     }
 
