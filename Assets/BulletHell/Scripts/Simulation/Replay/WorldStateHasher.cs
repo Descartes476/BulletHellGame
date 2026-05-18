@@ -8,7 +8,11 @@ public static class WorldStateHasher
     {
         StableHashBuilder builder = new StableHashBuilder(0);
         builder.Add(world.Tick);
-        AppendPlayer(ref builder, world.Player);
+        PlayerSimState[] players = world.Players;
+        for(int i = 0; i < players.Length; i++)
+        {
+            AppendPlayer(ref builder, players[i]);
+        }
 
         BulletSimState[] bullets = world.Bullets;
         builder.Add(bullets != null ? bullets.Length : 0);

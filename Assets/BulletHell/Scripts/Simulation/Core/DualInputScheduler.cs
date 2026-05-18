@@ -47,11 +47,35 @@ public class DualInputScheduler
 
     public bool IsReady(int tick, SimulationRunMode runMode)
     {
+        return GetReadyState(tick, runMode) == InputReadyState.Ready;
+    }
+
+    public InputReadyState GetReadyState(int tick, SimulationRunMode runMode)
+    {
+        bool hasLocal = _buffer.HasLocal(tick);
         if(runMode == SimulationRunMode.Replay)
         {
-            return _buffer.HasLocal(tick);
+            return hasLocal ? InputReadyState.Ready : InputReadyState.MissingLocal;
         }
-        return _buffer.HasLocal(tick) && _buffer.HasRemote(tick);
+
+        bool hasRemote = _buffer.HasRemote(tick);
+ 
+        if(hasLocal && hasRemote)
+        {
+            return InputReadyState.Ready;
+        }
+    
+        if(!hasLocal && !hasRemote)
+        {
+            return InputReadyState.MissingBoth;
+        }
+    
+        if(!hasLocal)
+        {
+            return InputReadyState.MissingLocal;
+        }
+    
+        return InputReadyState.MissingRemote;
     }
 
     public bool TryConsume(int tick, SimulationRunMode runMode, out InputFrame localInput, out InputFrame remoteInput)

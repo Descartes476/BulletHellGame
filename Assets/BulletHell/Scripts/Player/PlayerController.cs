@@ -4,7 +4,7 @@ using BulletHell.Simulation.Core;
 public class PlayerController : MonoBehaviour
 {
     [Header("Simulation")]
-    [SerializeField] private bool simulationDriven;
+    [SerializeField] private bool simulationDriven = true;
 
     private Camera _cam;
     private int _inputTick;
@@ -14,26 +14,6 @@ public class PlayerController : MonoBehaviour
     {
         _cam = Camera.main;
         _inputTick = 0;
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-        if (simulationDriven)
-            return;
-
-        if (_cam == null)
-            _cam = Camera.main;
-
-        float dt = Time.deltaTime;
-
-        InputFrame inputFrame = SampleCurrentInputFrame();
-        _inputTick++;
-    }
-
-    public void SetSimulationDriven(bool isSimulationDriven)
-    {
-        simulationDriven = isSimulationDriven;
     }
 
     private Vector3 ScreenToWorldPoint(Vector3 mouse)
@@ -70,10 +50,5 @@ public class PlayerController : MonoBehaviour
         }
 
         return new InputFrame(tick, moveX, moveY, aimX, aimY, firePressed);
-    }
-
-    private InputFrame SampleCurrentInputFrame()
-    {
-        return SampleCurrentInputFrame(_inputTick);
     }
 }

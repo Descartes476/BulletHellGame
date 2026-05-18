@@ -26,7 +26,7 @@ public sealed class ReplayRecorder
         };
     }
 
-    public void RecordFrame(int tick, in InputFrame inputFrame, ulong worldHash)
+    public void RecordFrame(int tick, in FrameInputBundle inputBundle, ulong worldHash)
     {
         if(CurrentReplay == null)
         {
@@ -36,7 +36,7 @@ public sealed class ReplayRecorder
         CurrentReplay.Frames.Add(new ReplayFrame
         {
             Tick = tick,
-            Input = inputFrame,
+            Input = inputBundle,
             WorldHash = worldHash
         });
     }

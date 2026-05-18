@@ -2,34 +2,37 @@ namespace BulletHell.Simulation.Core
 {
     public readonly struct WorldSnapshot
     {
-        /// <summary>
-        /// 当前世界快照对应的逻辑 Tick 编号。
-        /// </summary>
-        public int Tick { get; }
-        /// <summary>
-        /// 当前世界快照使用的仿真配置。
-        /// </summary>
-        public SimulationConfig Config { get; }
-        /// <summary>
-        /// 当前世界中的玩家状态。
-        /// </summary>
-        public PlayerSimState Player { get; }
+        
+        public int Tick { get; } // 当前世界快照对应的逻辑 Tick 编号。
+        public SimulationConfig Config { get; } // 当前世界快照使用的仿真配置。
+        
+        public PlayerSimState[] Players { get; } // 当前世界中的玩家状态。
 
-        /// <summary>
-        /// 当前世界中的所有子弹状态。
-        /// </summary>
-        public BulletSimState[] Bullets { get; }
+        public PlayerSimState Player
+        {
+            get{ return Players.Length > 0 ? Players[0] : default; }
+        }
 
-        /// <summary>
-        /// 当前世界中的所有敌人状态。
-        /// </summary>
-        public EnemySimState[] Enemies { get; }
+        public BulletSimState[] Bullets { get; } // 当前世界中的所有子弹状态。
 
-        public WorldSnapshot(int tick, SimulationConfig config, PlayerSimState player, BulletSimState[] bullets, EnemySimState[] enemies)
+        public EnemySimState[] Enemies { get; }// 当前世界中的所有敌人状态。
+
+        public WorldSnapshot(
+            int tick,
+            SimulationConfig config,
+            PlayerSimState player,
+            BulletSimState[] bullets,
+            EnemySimState[] enemies)
+            : this(tick, config, new PlayerSimState[] { player }, bullets, enemies)
+        {
+            
+        }
+
+        public WorldSnapshot(int tick, SimulationConfig config, PlayerSimState[] players, BulletSimState[] bullets, EnemySimState[] enemies)
         {
             Tick = tick;
             Config = config;
-            Player = player;
+            Players = players == null ? new PlayerSimState[0] : (PlayerSimState[])players.Clone();
             Bullets = bullets == null ? new BulletSimState[0] : (BulletSimState[])bullets.Clone();
             Enemies = enemies == null ? new EnemySimState[0] : (EnemySimState[])enemies.Clone();
         }

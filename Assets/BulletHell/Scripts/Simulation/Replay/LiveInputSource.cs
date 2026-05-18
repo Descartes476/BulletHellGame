@@ -1,3 +1,4 @@
+using System;
 using BulletHell.Simulation.Core;
 
 public sealed class LiveInputSource : IInputSource
@@ -10,7 +11,6 @@ public sealed class LiveInputSource : IInputSource
         {
             throw new System.ArgumentNullException(nameof(playerController));
         }
-
         this.playerController = playerController;
     }
 

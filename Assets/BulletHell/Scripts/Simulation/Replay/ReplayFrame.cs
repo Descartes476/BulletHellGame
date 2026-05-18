@@ -4,6 +4,6 @@ using BulletHell.Simulation.Core;
 public struct ReplayFrame
 {
     public int Tick;
-    public InputFrame Input;
+    public FrameInputBundle Input;
     public ulong WorldHash;
 }

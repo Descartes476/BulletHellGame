@@ -1,13 +1,14 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using System.Data;
 
 namespace BulletHell.Simulation.Core
 {
     /// <summary>
     /// 视图同步管理器，负责将仿真状态同步到Unity视图层
     /// </summary>
-    public class ViewSyncManager
+    public class ViewSyncManager : MonoBehaviour
     {
         // 子弹实体ID到显示对象的映射
         private readonly Dictionary<int, Bullet> _bulletViews = new Dictionary<int, Bullet>();
@@ -15,10 +16,27 @@ namespace BulletHell.Simulation.Core
         private readonly Dictionary<int, EnemyBase> _enemyViews = new Dictionary<int, EnemyBase>();
         // 玩家实体ID到显示对象的映射
         private readonly Dictionary<int, PlayerController> _playerViews = new Dictionary<int, PlayerController>();
+        private readonly List<PlayerController> playerControllers = new List<PlayerController>();
 
-        private readonly SimulationConfig _config;
+        private SimulationConfig _config;
+        [Header("Player 2 Visual")]
+        [SerializeField] private PlayerController _playerPrefab; // 用于实例化玩家2的可视化对象
+        public static ViewSyncManager Instance { get; private set; }
 
-        public ViewSyncManager(SimulationConfig config)
+        void Awake()
+        {
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
+
+        public void SetConfig(SimulationConfig config)
         {
             _config = config;
         }
@@ -26,7 +44,7 @@ namespace BulletHell.Simulation.Core
         /// <summary>
         /// 初始化视图同步管理器
         /// </summary>
-        public void ResetSceneView(int playerID, Vector3 initialPlayerPosition, List<EnemyBase> initialSceneEnemies)
+        public void ResetSceneView(int playerID, Dictionary<int, Vector3> initialPlayerPosition, List<EnemyBase> initialSceneEnemies)
         {
             ClearBulletViews();
             if(!_playerViews.TryGetValue(playerID, out var playerController))
@@ -34,22 +52,30 @@ namespace BulletHell.Simulation.Core
                 Debug.LogError("ViewSyncManager: PlayerController was not found when switching to replay mode.");
                 return;
             }
-            SetPlayerView(playerID, playerController);
+            initialPlayerPosition.TryGetValue(playerID, out Vector3 startPos);
+            SetPlayerView(playerID, playerController, startPos);
         }
 
         public void RestoreSceneActors(
-            int playerID, Vector3 initialPlayerPosition,
+            Dictionary<int, Vector3> initialPlayerPosition,
             List<EnemyBase> initialSceneEnemies,
             Dictionary<EnemyBase, Vector3> initialEnemyPositions
         )
         {
-            if(!_playerViews.TryGetValue(playerID, out PlayerController playerController))
+            List<int> PlayersID = initialPlayerPosition.Keys.ToList();
+            for(int i = 0; i < PlayersID.Count; i++)
             {
-                Debug.LogError("ViewSyncManager: PlayerController was not found when switching to replay mode.");
-                return;
+                int playerID = PlayersID[i];
+                if(!_playerViews.TryGetValue(playerID, out PlayerController playerController))
+                {
+                    Debug.LogError("ViewSyncManager: PlayerController was not found when switching to replay mode.");
+                    return;
+                }
+                initialPlayerPosition.TryGetValue(playerID, out Vector3 startPos);
+                playerController.gameObject.SetActive(true);
+                playerController.transform.position = startPos;
             }
-            playerController.gameObject.SetActive(true);
-            playerController.transform.position = initialPlayerPosition;
+            
 
             for (int i = 0; i < initialSceneEnemies.Count; i++)
             {
@@ -70,8 +96,20 @@ namespace BulletHell.Simulation.Core
         /// <summary>
         /// 设置玩家视图映射
         /// </summary>
-        public void SetPlayerView(int playerId, PlayerController playerController)
+        public void SetPlayerView(int playerId, PlayerController playerController = null, Vector3 startPos = new Vector3())
         {
+            if(playerController == null)
+            {
+                if (_playerPrefab != null)
+                {
+                    playerController = Instantiate(_playerPrefab, startPos, Quaternion.identity);
+                }
+                else
+                {
+                    Debug.LogError("ViewSynManager: Player Prefab is not assigned.");
+                }
+            }
+            
             _playerViews[playerId] = playerController;
         }
 
@@ -79,6 +117,11 @@ namespace BulletHell.Simulation.Core
         {
             _playerViews.TryGetValue(playerID, out PlayerController playerController);
             return playerController;
+        }
+
+        public PlayerController[] GetAllPlayerView()
+        {
+            return _playerViews.Values.ToArray();
         }
 
         /// <summary>

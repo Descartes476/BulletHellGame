@@ -16,11 +16,34 @@ namespace BulletHell.Simulation.Core
             new FixVector3(-Fix64.One, -Fix64.One, Fix64.Zero)
         };
 
-        public static WorldSnapshot Step(in WorldSnapshot currentWorld, in InputFrame playerInput, DeterministicRandom random)
+        public static WorldSnapshot Step(in WorldSnapshot currentWorld, in FrameInputBundle inputBundle, DeterministicRandom random)
         {
             SimulationConfig config = currentWorld.Config;
             //玩家推进
-            PlayerSimState nextPlayerState = PlayerSimulator.Step(currentWorld.Player, playerInput, config);
+            PlayerSimState[] currentPlayers = currentWorld.Players;
+            PlayerSimState[] nextPlayers = new PlayerSimState[currentPlayers.Length];
+            if(currentPlayers.Length > 0)
+            {
+                nextPlayers[0] = PlayerSimulator.Step(
+                    currentPlayers[0],
+                    inputBundle.LocalInput,
+                    config
+                );
+            }
+            
+            if(currentPlayers.Length > 1)
+            {
+                nextPlayers[1] = PlayerSimulator.Step(
+                    currentPlayers[1],
+                    inputBundle.RemoteInput,
+                    config
+                );
+            }
+            
+            for(int i = 2; i < currentPlayers.Length; i++)
+            {
+                nextPlayers[i] = currentPlayers[i];
+            }
             int nextTick = currentWorld.Tick + 1;
 
             //子弹推进
@@ -64,7 +87,7 @@ namespace BulletHell.Simulation.Core
                 nextEnemySimStates.Add(nextEnemy);
             }
 
-            return new WorldSnapshot(nextTick, config, nextPlayerState, nextBullets.ToArray(), nextEnemySimStates.ToArray());
+            return new WorldSnapshot(nextTick, config, nextPlayers, nextBullets.ToArray(), nextEnemySimStates.ToArray());
         }
     }
 }

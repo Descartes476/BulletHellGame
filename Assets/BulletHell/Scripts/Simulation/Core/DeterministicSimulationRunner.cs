@@ -1,16 +1,28 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using BulletHell.Simulation.Core;
+
+
 
 public class DeterministicSimulationRunner
 {
+    private struct ValidationResult
+    {
+        public string TestName;
+        public bool Passed;
+        public int Ticks;
+        public uint Seed;
+        public ulong FinalHash;
+        public int MismatchTick;
+    }
+    
     private SimulationConfig _config;
     private WorldSnapshot _currentWorld;
     private DeterministicRandom _random;
     int _nextBulletEntityID;
     private readonly List<int> _enemyDiedEntityIds = new List<int>();
     public ulong CurrentHash;
+    
     int CurrentTick => _currentWorld.Tick;
 
     public DeterministicSimulationRunner(WorldSnapshot world, SimulationConfig config, uint seed)
@@ -37,11 +49,11 @@ public class DeterministicSimulationRunner
         get => _enemyDiedEntityIds;
     }
 
-    public void Step(InputFrame inputFrame)
+    public void Step(FrameInputBundle inputBundle)
     {
         _enemyDiedEntityIds.Clear();
         // 推进输入与世界状态
-        WorldSnapshot nextWorld = ResolveInput(_currentWorld, inputFrame);
+        WorldSnapshot nextWorld = ResolveInput(_currentWorld, inputBundle);
         // 生成敌方子弹
         nextWorld = ResolveEnemyFire(nextWorld);
         // 结算玩家子弹命中
@@ -52,10 +64,10 @@ public class DeterministicSimulationRunner
         CurrentHash = WorldStateHasher.Compute(_currentWorld);
     }
 
-    private WorldSnapshot ResolveInput(WorldSnapshot world, InputFrame inputFrame)
+    private WorldSnapshot ResolveInput(WorldSnapshot world, FrameInputBundle inputBundle)
     {
-        bool shouldFire = PlayerSimulator.ShouldFire(world.Player, inputFrame);
-        WorldSnapshot nextWorld = WorldSimulator.Step(world, inputFrame, _random);
+        bool shouldFire = PlayerSimulator.ShouldFire(world.Players[0], inputBundle.LocalInput);
+        WorldSnapshot nextWorld = WorldSimulator.Step(world, inputBundle, _random);
         if(shouldFire)  // 生成新子弹
         {
             int bulletEntityID = _nextBulletEntityID++;
@@ -78,11 +90,11 @@ public class DeterministicSimulationRunner
             BulletSimState[] newBullets = new BulletSimState[nextWorldBullets.Length + 1];
             Array.Copy(nextWorldBullets, newBullets, nextWorldBullets.Length);
             newBullets[nextWorldBullets.Length] = bullet;
-            nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Player, newBullets, nextWorld.Enemies);
+            nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Players, newBullets, nextWorld.Enemies);
         }
         return nextWorld;
     }
-
+    
     // 敌人开火生成子弹
     private WorldSnapshot ResolveEnemyFire(WorldSnapshot world)
     {
@@ -131,7 +143,7 @@ public class DeterministicSimulationRunner
         return new WorldSnapshot(
             world.Tick,
             world.Config,
-            world.Player,
+            world.Players,
             bulletSims.ToArray(),
             enemies
         );
@@ -155,7 +167,7 @@ public class DeterministicSimulationRunner
         (
             world.Tick,
             world.Config,
-            world.Player,
+            world.Players,
             bulletsNotHit.ToArray(),
             enemies
         );
@@ -222,10 +234,12 @@ public class DeterministicSimulationRunner
             respawnCountdownTicks,
             invincibleTicks
         );
+        PlayerSimState[] players = (PlayerSimState[])world.Players.Clone();
+        players[0] = player;
         return new WorldSnapshot(
             world.Tick,
             world.Config,
-            player,
+            players,
             bulletsNotHit.ToArray(),
             world.Enemies
         );

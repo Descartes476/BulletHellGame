@@ -2,6 +2,7 @@ using UnityEngine;
 using BulletHell.Simulation.Core;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 public enum SimulationRunMode
 {
@@ -14,17 +15,27 @@ public class SimulationDriver : MonoBehaviour
     // 默认使用的模拟配置资源
     [SerializeField] private SimulationConfigAsset defaultConfigAsset;
 
+    // 输入缓冲相对当前tick的预拉取提前量
     private const int InputBufferLeadTicks = 2;
+    // 本地输入写入调度时附加的固定延迟tick数
     private const int LocalInputDelayTicks = 2;
     public static SimulationDriver Instance { get; private set; }
 
     // 当前运行时使用的模拟配置
     private SimulationConfig config;
 
+    // 本地玩家输入源
     private IInputSource _localInputSource;
+    // 远端玩家输入源
     private IInputSource _remoteInputSource;
+    // 本地与远端输入帧的双路缓冲区
     private DualInputBuffer _dualInputBuffer;
+    // 输入采集、填充与消费的调度器
     private DualInputScheduler _inputScheduler;
+    // 最后执行帧
+    private int _lastInputWaitTick = -1;
+    // 最后执行帧的状态
+    private InputReadyState _lastInputWaitState = InputReadyState.Ready;
     // 当前模拟运行模式
     private SimulationRunMode _runMode = SimulationRunMode.Live;
     // 统一的确定性仿真推进器
@@ -38,18 +49,16 @@ public class SimulationDriver : MonoBehaviour
     // 下一个可分配的敌人实体ID
     private int _nextEnemyEntityID = 1;
     // 玩家实体使用的固定ID
-    private int _playerID = 1;
+    private int _localPlayerID = 1;
+    private int _remotePlayerID = 2;
     // 随机种子
     private uint _seed = 0;
     // 场景初始时的玩家位置
-    private Vector3 _initialPlayerPosition;
+    private Dictionary<int, Vector3> _initialPlayerPosition = new Dictionary<int, Vector3>();
     // 场景初始时缓存的敌人对象列表
     private List<EnemyBase> _initialSceneEnemies = new List<EnemyBase>();
     // 场景初始时各敌人对象对应的位置缓存
     private Dictionary<EnemyBase, Vector3> _initialEnemyPositions = new Dictionary<EnemyBase, Vector3>();
-
-    // 视图同步管理器
-    private ViewSyncManager _viewSyncManager;
 
     public static event System.Action<int, int> OnPlayerHpChanged;
     public static event System.Action<int, int> OnPlayerSpawned;
@@ -70,21 +79,12 @@ public class SimulationDriver : MonoBehaviour
             return;
         }
 
-        PlayerController playerController = FindObjectOfType<PlayerController>();
-
-        if (playerController == null)
-        {
-            Debug.LogError("SimulationDriver: PlayerController was not found.");
-            enabled = false;
-            return;
-        }
-
         config = defaultConfigAsset.ToSimulationConfig();
-        _viewSyncManager = new ViewSyncManager(config);
-        _viewSyncManager.SetPlayerView(_playerID, playerController);
-        playerController.SetSimulationDriven(true);
-        CacheInitialSceneState(playerController); // 记录场景初始状态
-        SetLiveMode(playerController);
+        ViewSyncManager.Instance.SetConfig(config);
+        ViewSyncManager.Instance.SetPlayerView(_localPlayerID);
+        ViewSyncManager.Instance.SetPlayerView(_remotePlayerID);
+        CacheInitialSceneState(); // 记录场景初始状态
+        SetLiveMode();
     }
 
     private void OnDestroy()
@@ -111,8 +111,18 @@ public class SimulationDriver : MonoBehaviour
         while (_accumulator >= tickInterval)
         {
             _inputScheduler.Fill(_runner.Tick, _runMode);
-            if(!_inputScheduler.IsReady(_runner.Tick, _runMode))
+            InputReadyState readyState = _inputScheduler.GetReadyState(_runner.Tick, _runMode);
+
+            if(readyState != InputReadyState.Ready)
             {
+                if (_runMode == SimulationRunMode.Replay && _runner.Tick > _inputScheduler.GetRecordMaxTick())
+                {
+                    Debug.Log("SimulationDriver: Replay Finished.");
+                    StopReplayAndReturnToLive();
+                    return;
+                }
+
+                HandleInputNotReady(_runner.Tick, readyState);
                 return;
             }
             if (!_inputScheduler.TryConsume(_runner.Tick, _runMode, out InputFrame inputFrame, out InputFrame remoteInput))
@@ -126,17 +136,35 @@ public class SimulationDriver : MonoBehaviour
                 Debug.LogError($"SimulationDriver: Failed to get input for tick {_runner.Tick}.");
                 return;
             }
-            ProcessReplayFrameResult(inputFrame, _runner.CurrentWorld);
-            _runner.Step(inputFrame);
+
+            ClearInputWaitState();
+
+            FrameInputBundle inputBundle = new FrameInputBundle(
+                _runner.Tick,
+                inputFrame,
+                remoteInput
+            );
+            ProcessReplayFrameResult(inputBundle, _runner.CurrentWorld);
+            if(_runMode == SimulationRunMode.Replay)
+            {
+                int i = 0;
+            }
+            _runner.Step(inputBundle);
 
             _accumulator -= tickInterval;
             ResolveEnemyDied();
         }
 
         WorldSnapshot newWorld = _runner.CurrentWorld;
-        var playerSyncResult = _viewSyncManager.SyncPlayerView(oldWorld.Player, newWorld.Player, _playerID);
-        _viewSyncManager.SyncBulletViews(newWorld.Bullets);
-        _viewSyncManager.SyncEnemyViews(newWorld.Enemies);
+        ViewSyncManager viewSyncManager = ViewSyncManager.Instance;
+        var playerSyncResult = viewSyncManager.SyncPlayerView(oldWorld.Player, newWorld.Player, _localPlayerID);
+        // 同步玩家2（若存在），不触发本地HUD事件
+        if (oldWorld.Players.Length > 1 && newWorld.Players.Length > 1)
+        {
+            viewSyncManager.SyncPlayerView(oldWorld.Players[1], newWorld.Players[1], _remotePlayerID);
+        }
+        viewSyncManager.SyncBulletViews(newWorld.Bullets);
+        viewSyncManager.SyncEnemyViews(newWorld.Enemies);
         
         // 触发玩家相关事件
         if (playerSyncResult.HpChanged)
@@ -206,7 +234,7 @@ public class SimulationDriver : MonoBehaviour
 
         if (playerController == null)
         {
-            playerController = _viewSyncManager.GetPlayerView(_playerID);
+            playerController = ViewSyncManager.Instance.GetPlayerView(_localPlayerID);
             if(playerController == null)
             {
                 Debug.LogError("SimulationDriver: PlayerController was not found when switching to live mode.");
@@ -239,7 +267,7 @@ public class SimulationDriver : MonoBehaviour
         }
 
 
-        _viewSyncManager.ResetSceneView(_playerID, _initialPlayerPosition, _initialSceneEnemies);
+        ViewSyncManager.Instance.ResetSceneView(_localPlayerID, _initialPlayerPosition, _initialSceneEnemies);
         _seed = replayData.Seed;
 
         _localInputSource = new ReplayInputSource(replayData);
@@ -253,13 +281,13 @@ public class SimulationDriver : MonoBehaviour
     }
 
     // 执行帧记录/回放校验
-    private void ProcessReplayFrameResult(InputFrame inputFrame, WorldSnapshot world)
+    private void ProcessReplayFrameResult(FrameInputBundle inputBundle, WorldSnapshot world)
     {
         ulong worldHash = WorldStateHasher.Compute(world);
         // 记录模式，记录当前世界状态
         if (_runMode == SimulationRunMode.Live)
         {
-            _recorder?.RecordFrame(world.Tick, inputFrame, worldHash);
+            _recorder?.RecordFrame(world.Tick, inputBundle, worldHash);
             return;
         }
         // 回放模式，校验当前世界状态
@@ -323,11 +351,30 @@ public class SimulationDriver : MonoBehaviour
     }
 
     // 记录场景初始状态
-    private void CacheInitialSceneState(PlayerController playerController)
+    private void CacheInitialSceneState()
     {
-        _initialPlayerPosition = playerController.transform.position;
+        _initialPlayerPosition.Clear();
         _initialSceneEnemies.Clear();
         _initialEnemyPositions.Clear();
+
+        ViewSyncManager viewSyncManager = ViewSyncManager.Instance;
+        
+        PlayerController localPlayer = viewSyncManager.GetPlayerView(_localPlayerID);
+        if(localPlayer == null)
+        {
+            Debug.LogError("SimulationDriver: PlayerController is null.");
+            return;
+        }
+        _initialPlayerPosition[_localPlayerID] = localPlayer.transform.position;
+
+        PlayerController remotePlayer = viewSyncManager.GetPlayerView(_remotePlayerID);
+        if(remotePlayer == null)
+        {
+            Debug.LogError("SimulationDriver: PlayerController is null.");
+            return;
+        }
+        _initialPlayerPosition[_remotePlayerID] = remotePlayer.transform.position;
+
 
         EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
         Array.Sort(sceneEnemies, (a, b) =>
@@ -361,14 +408,15 @@ public class SimulationDriver : MonoBehaviour
             InputBufferLeadTicks
         );
 
-        _viewSyncManager?.ClearBulletViews();
-        _viewSyncManager?.RestoreSceneActors(_playerID, _initialPlayerPosition,
+        ViewSyncManager.Instance?.ClearBulletViews();
+        ViewSyncManager.Instance?.RestoreSceneActors(_initialPlayerPosition,
         _initialSceneEnemies, _initialEnemyPositions); 
 
+        _initialPlayerPosition.TryGetValue(_localPlayerID, out Vector3 localPlayerPos);
         // 模拟层初始化
-        PlayerSimState initialPlayer = new PlayerSimState(
-            _playerID,
-            new FixVector3((Fix64)_initialPlayerPosition.x, (Fix64)_initialPlayerPosition.y, (Fix64)_initialPlayerPosition.z),
+        PlayerSimState player1 = new PlayerSimState(
+            1,
+            new FixVector3((Fix64)localPlayerPos.x, (Fix64)localPlayerPos.y, (Fix64)localPlayerPos.z),
             new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
             config.PlayerMaxHp,
             config.PlayerHitRadius,
@@ -376,14 +424,29 @@ public class SimulationDriver : MonoBehaviour
             0,
             0,
             0);
+            
+        _initialPlayerPosition.TryGetValue(_remotePlayerID, out Vector3 remotePlayerPos);
+        PlayerSimState player2 = new PlayerSimState(
+            2,
+            new FixVector3((Fix64)remotePlayerPos.x, (Fix64)remotePlayerPos.y, (Fix64)remotePlayerPos.z),
+            new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
+            config.PlayerMaxHp,
+            config.PlayerHitRadius,
+            true,
+            0,
+            0,
+            0
+        );
+        PlayerSimState[] players = {player1, player2};
+
         var enemies = GetEnemySimStates();
-        WorldSnapshot initialWorld = new WorldSnapshot(0, config, initialPlayer, new BulletSimState[0], enemies);
+        WorldSnapshot initialWorld = new WorldSnapshot(0, config, players, new BulletSimState[0], enemies);
         _runner = new DeterministicSimulationRunner(initialWorld, config, _seed);
         if(_runMode == SimulationRunMode.Live)
         {
             _inputScheduler.WarmupLive();
         }
-        OnPlayerSpawned?.Invoke((int)initialPlayer.Hp, (int)config.PlayerMaxHp);
+        OnPlayerSpawned?.Invoke((int)player1.Hp, (int)config.PlayerMaxHp);
     }
 
     public bool TryStartReplay(ReplayData replaydata)
@@ -398,6 +461,14 @@ public class SimulationDriver : MonoBehaviour
     public void StopReplayAndReturnToLive()
     {
         SetLiveMode();
+    }
+
+    public void PushRemoteInput(InputFrame inputFrame)
+    {
+        if (_remoteInputSource is RemoteInputQueueSource remoteInputQueueSource)
+        {
+            remoteInputQueueSource.PushInput(inputFrame);
+        }
     }
 
     private EnemySimState[] GetEnemySimStates()
@@ -430,7 +501,7 @@ public class SimulationDriver : MonoBehaviour
         }
         
         // 设置敌人视图映射到 ViewSyncManager
-        _viewSyncManager?.SetEnemyViews(enemyViews);
+        ViewSyncManager.Instance.SetEnemyViews(enemyViews);
         return enemySimStates.ToArray();
     }
 
@@ -445,5 +516,25 @@ public class SimulationDriver : MonoBehaviour
         }
 
         return path;
+    }
+
+    private void HandleInputNotReady(int tick, InputReadyState readyState)
+    {
+        if (_lastInputWaitTick == tick && _lastInputWaitState == readyState)
+        {
+            return;
+        }
+    
+        _lastInputWaitTick = tick;
+        _lastInputWaitState = readyState;
+    
+        Debug.Log($"SimulationDriver: Waiting input at tick {tick}, state={readyState}.");
+    }
+
+    private void ClearInputWaitState()
+    {
+        _lastInputWaitTick = -1;
+        _lastInputWaitState = InputReadyState.Ready;
+
     }
 }
