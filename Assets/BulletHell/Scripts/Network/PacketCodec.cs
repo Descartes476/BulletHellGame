@@ -51,7 +51,7 @@ public static class PacketCodec
     public static bool TryDecodeHeader(byte[] data, out PacketHeader header)
     {
         header = default;
-        if (data == null || data.Length < PacketHeader.TotalSize)
+        if (data == null || data.Length < PacketHeader.HeaderSize)
             return false;
 
         using var ms = new MemoryStream(data);
@@ -64,12 +64,12 @@ public static class PacketCodec
     public static bool TryDecodeHello(byte[] data, PacketHeader header, out uint clientRandom)
     {
         clientRandom = 0;
-        int expectedSize = PacketHeader.TotalSize + sizeof(uint);
+        int expectedSize = PacketHeader.HeaderSize + sizeof(uint);
         if (!HasExpectedSize(data, expectedSize) || header.Type != NetMessageType.Hello || !header.IsValid)
             return false;
         using var ms = new MemoryStream(data);
         using var reader = new BinaryReader(ms);
-        reader.BaseStream.Seek(PacketHeader.TotalSize, SeekOrigin.Begin);
+        reader.BaseStream.Seek(PacketHeader.HeaderSize, SeekOrigin.Begin);
         clientRandom = reader.ReadUInt32();
         return true;
     }
@@ -80,13 +80,13 @@ public static class PacketCodec
         playerCount = 0;
         startTick = 0;
         seed = 0;
-        int expectedSize = PacketHeader.TotalSize + sizeof(byte) + sizeof(byte) + sizeof(int) + sizeof(uint);
+        int expectedSize = PacketHeader.HeaderSize + sizeof(byte) + sizeof(byte) + sizeof(int) + sizeof(uint);
         if (!HasExpectedSize(data, expectedSize) || header.Type != NetMessageType.Welcome || !header.IsValid)
             return false;
 
         using var ms = new MemoryStream(data);
         using var reader = new BinaryReader(ms);
-        reader.BaseStream.Seek(PacketHeader.TotalSize, SeekOrigin.Begin);
+        reader.BaseStream.Seek(PacketHeader.HeaderSize, SeekOrigin.Begin);
         playerId = reader.ReadByte();
         playerCount = reader.ReadByte();
         startTick = reader.ReadInt32();
@@ -98,13 +98,13 @@ public static class PacketCodec
     {
         playerId = 0;
         input = default;
-        int expectedSize = PacketHeader.TotalSize + sizeof(byte) + InputFrameSize;
+        int expectedSize = PacketHeader.HeaderSize + sizeof(byte) + InputFrameSize;
         if (!HasExpectedSize(data, expectedSize) || header.Type != NetMessageType.Input || !header.IsValid)
             return false;
 
         using var ms = new MemoryStream(data);
         using var reader = new BinaryReader(ms);
-        reader.BaseStream.Seek(PacketHeader.TotalSize, SeekOrigin.Begin);
+        reader.BaseStream.Seek(PacketHeader.HeaderSize, SeekOrigin.Begin);
         playerId = reader.ReadByte();
         input = InputFrameSerializer.Read(reader);
         return true;
@@ -115,13 +115,13 @@ public static class PacketCodec
         tick = 0;
         p1 = default;
         p2 = default;
-        int expectedSize = PacketHeader.TotalSize + sizeof(int) + InputFrameSize + InputFrameSize;
+        int expectedSize = PacketHeader.HeaderSize + sizeof(int) + InputFrameSize + InputFrameSize;
         if (!HasExpectedSize(data, expectedSize) || header.Type != NetMessageType.Frame || !header.IsValid)
             return false;
 
         using var ms = new MemoryStream(data);
         using var reader = new BinaryReader(ms);
-        reader.BaseStream.Seek(PacketHeader.TotalSize, SeekOrigin.Begin);
+        reader.BaseStream.Seek(PacketHeader.HeaderSize, SeekOrigin.Begin);
         tick = reader.ReadInt32();
         p1 = InputFrameSerializer.Read(reader);
         p2 = InputFrameSerializer.Read(reader);

@@ -256,6 +256,54 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 248483743}
   m_CullTransparentMesh: 1
+--- !u!1 &286224586
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 286224588}
+  - component: {fileID: 286224587}
+  m_Layer: 0
+  m_Name: NetInputBridge
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &286224587
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 286224586}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5f1b8c96483ea3b42958f7c9b7fbf7ea, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _client: {fileID: 912282223}
+  _serverIp: 127.0.0.1
+  _serverPort: 7777
+  _localPortArray: 621e0000631e0000641e0000651e0000
+--- !u!4 &286224588
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 286224586}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 41.66948, y: 21.909708, z: -10.582513}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &519420028
 GameObject:
   m_ObjectHideFlags: 0
@@ -611,7 +659,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enemyPrefab: {fileID: 3080250497105085159, guid: 20f132a8845c9eb499273d9691d62f6c, type: 3}
-  initialCount: 5
+  initialCount: 0
   seed: 1
   spawnMin: {x: -6, y: 1}
   spawnMax: {x: 6, y: 4}
@@ -642,6 +690,7 @@ GameObject:
   - component: {fileID: 912282218}
   - component: {fileID: 912282220}
   - component: {fileID: 912282221}
+  - component: {fileID: 912282223}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -699,6 +748,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 94e9300aa8d1b44418c664c2f9c99ae4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &912282223
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 912282217}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88a8061456201784cbe87a97b293e8cb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &1018815621
@@ -1227,3 +1288,4 @@ SceneRoots:
   - {fileID: 1917080576}
   - {fileID: 651570536}
   - {fileID: 1356257747}
+  - {fileID: 286224588}

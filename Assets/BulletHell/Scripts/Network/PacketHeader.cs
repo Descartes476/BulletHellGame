@@ -4,7 +4,7 @@ namespace BulletHell.Network
 {
     public readonly struct PacketHeader
     {
-        public const int TotalSize = 10;
+        public const int HeaderSize = 10; // Magic0(1) + Magic1(1) + Version(1) + Type(1) + Sequence(2) + ClientId(4)
         public const byte MagicValue0 = (byte)'D';
         public const byte MagicValue1 = (byte)'K';
         public const byte ProtocolVersion = 1;
@@ -55,7 +55,7 @@ namespace BulletHell.Network
         public static bool TryRead(BinaryReader reader, out PacketHeader header)
         {
             header = default;
-            if (reader.BaseStream.Length - reader.BaseStream.Position < TotalSize)
+            if (reader.BaseStream.Length - reader.BaseStream.Position < HeaderSize)
                 return false;
             byte magic0 = reader.ReadByte();
             byte magic1 = reader.ReadByte();

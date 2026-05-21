@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Threading;
 using BulletHell.Network;
 using BulletHell.Simulation.Core;
+using UnityEngine;
 
 public enum ClientState
 {
@@ -14,7 +15,8 @@ public enum ClientState
     Disconnected,   // 已断开连接
 }
 
-public class UdpLockstepClient
+
+public class UdpLockstepClient : MonoBehaviour
 {
     // 收发线程
     private Thread _receiveThread;
@@ -42,6 +44,7 @@ public class UdpLockstepClient
 
     // 消息事件
     public event Action<InputFrame> OnRemoteInputReceived;
+    public event Action<int, InputFrame, InputFrame> OnFrameReceived;
     public event Action<string> OnFatalError;
     public event Action OnConnected;
 
@@ -75,10 +78,10 @@ public class UdpLockstepClient
         }
     }
 
-    private void Connect(string serverIp, int serverPort, int localPort = 0)
+    public void Connect(string serverIp, int serverPort, int localPort = 0)
     {
         if(_running)
-            DisConnect();
+            Disconnect();
         // 创建UDP Socket并连接服务器
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         _socket.Bind(new IPEndPoint(IPAddress.Any, localPort));
@@ -98,8 +101,9 @@ public class UdpLockstepClient
         _state = ClientState.Connecting;
 
         // 发送Hello包
-        var helloPacket = PacketCodec.EncodeHello(0, 0, (uint)new Random().Next());
+        var helloPacket = PacketCodec.EncodeHello(0, 0, (uint)new System.Random().Next());
         _outgoingPackets.Add(helloPacket);
+        Debug.Log($"正在连接服务器 {serverIp}:{serverPort}，本地端口 {localPort}");
     }
 
     private void ReceiveLoop()
@@ -163,7 +167,7 @@ public class UdpLockstepClient
         _outgoingPackets.Add(data);
     }
     
-    public void DisConnect()
+    public void Disconnect()
     {
         if (!_running)
             return;
@@ -216,7 +220,9 @@ public class UdpLockstepClient
                 if (PacketCodec.TryDecodeFrame(data, header,
                         out int tick, out InputFrame p1, out InputFrame p2))
                 {
+                    InputFrame localInput = (_playerId == 0) ? p1 : p2;
                     InputFrame remoteInput = (_playerId == 0) ? p2 : p1;
+                    OnFrameReceived?.Invoke(tick, localInput, remoteInput);
                     OnRemoteInputReceived?.Invoke(remoteInput);
                 }
                 break;

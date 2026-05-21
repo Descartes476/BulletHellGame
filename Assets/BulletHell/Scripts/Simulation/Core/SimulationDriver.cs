@@ -3,6 +3,8 @@ using BulletHell.Simulation.Core;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using UnityEngine.tvOS;
+using UnityEngine.SocialPlatforms;
 
 public enum SimulationRunMode
 {
@@ -16,7 +18,7 @@ public class SimulationDriver : MonoBehaviour
     [SerializeField] private SimulationConfigAsset defaultConfigAsset;
 
     // 输入缓冲相对当前tick的预拉取提前量
-    private const int InputBufferLeadTicks = 2;
+    private const int ReplayInputDelayTick = 2;
     // 本地输入写入调度时附加的固定延迟tick数
     private const int LocalInputDelayTicks = 2;
     public static SimulationDriver Instance { get; private set; }
@@ -34,6 +36,8 @@ public class SimulationDriver : MonoBehaviour
     private DualInputScheduler _inputScheduler;
     // 最后执行帧
     private int _lastInputWaitTick = -1;
+    // 本地写入调度延迟Tick数
+    private int _currentLocalInputDelayTicks = LocalInputDelayTicks;
     // 最后执行帧的状态
     private InputReadyState _lastInputWaitState = InputReadyState.Ready;
     // 当前模拟运行模式
@@ -84,7 +88,6 @@ public class SimulationDriver : MonoBehaviour
         ViewSyncManager.Instance.SetPlayerView(_localPlayerID);
         ViewSyncManager.Instance.SetPlayerView(_remotePlayerID);
         CacheInitialSceneState(); // 记录场景初始状态
-        SetLiveMode();
     }
 
     private void OnDestroy()
@@ -145,12 +148,8 @@ public class SimulationDriver : MonoBehaviour
                 remoteInput
             );
             ProcessReplayFrameResult(inputBundle, _runner.CurrentWorld);
-            if(_runMode == SimulationRunMode.Replay)
-            {
-                int i = 0;
-            }
             _runner.Step(inputBundle);
-
+            Debug.Log($"执行了LocalInput Tick={inputFrame.Tick}, RemoteInput Tick={remoteInput.Tick}");
             _accumulator -= tickInterval;
             ResolveEnemyDied();
         }
@@ -250,6 +249,35 @@ public class SimulationDriver : MonoBehaviour
         _recorder = new ReplayRecorder();
         _seed = 1;
         _recorder.BeginRecording(config, _seed);
+        _currentLocalInputDelayTicks = LocalInputDelayTicks;
+        ResetSimulationWorld();
+    }
+
+    public void SetNetworkLiveMode(uint seed, RemoteInputQueueSource localInputSource, RemoteInputQueueSource remoteInputSource)
+    {
+        if(localInputSource == null)
+        {
+            Debug.LogError("SimulationDriver: localInputSource 为空.");
+            _localInputSource = null;
+            _remoteInputSource = null;
+            return;
+        }
+        if(remoteInputSource == null)
+        {
+            Debug.LogError("SimulationDriver: remoteInputSource 为空.");
+            _localInputSource = null;
+            _remoteInputSource = null;
+            return;
+        }
+
+        _localInputSource = localInputSource;
+        _remoteInputSource = remoteInputSource;
+        _runMode = SimulationRunMode.Live;
+        _verifier = null;
+        _recorder = new ReplayRecorder();
+        _seed = seed;
+        _recorder.BeginRecording(config, _seed);
+        _currentLocalInputDelayTicks = 0; // 网络模式下本地输入不额外添加延迟
         ResetSimulationWorld();
     }
 
@@ -404,13 +432,13 @@ public class SimulationDriver : MonoBehaviour
             _dualInputBuffer,
             _localInputSource,
             _remoteInputSource,
-            LocalInputDelayTicks,
-            InputBufferLeadTicks
+            _currentLocalInputDelayTicks,
+            ReplayInputDelayTick
         );
 
         ViewSyncManager.Instance?.ClearBulletViews();
         ViewSyncManager.Instance?.RestoreSceneActors(_initialPlayerPosition,
-        _initialSceneEnemies, _initialEnemyPositions); 
+        _initialSceneEnemies, _initialEnemyPositions);
 
         _initialPlayerPosition.TryGetValue(_localPlayerID, out Vector3 localPlayerPos);
         // 模拟层初始化

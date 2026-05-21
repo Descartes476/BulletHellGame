@@ -68,8 +68,7 @@ namespace BulletHell.Simulation.Core
                 int playerID = PlayersID[i];
                 if(!_playerViews.TryGetValue(playerID, out PlayerController playerController))
                 {
-                    Debug.LogError("ViewSyncManager: PlayerController was not found when switching to replay mode.");
-                    return;
+                    SetPlayerView(playerID);
                 }
                 initialPlayerPosition.TryGetValue(playerID, out Vector3 startPos);
                 playerController.gameObject.SetActive(true);
