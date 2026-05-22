@@ -26,17 +26,17 @@ public class SimulationDriver : MonoBehaviour
     // 当前运行时使用的模拟配置
     private SimulationConfig config;
 
-    // 本地玩家输入源
-    private IInputSource _localInputSource;
-    // 远端玩家输入源
-    private IInputSource _remoteInputSource;
-    // 本地与远端输入帧的双路缓冲区
+    // P1 输入源
+    private IInputSource _p1InputSource;
+    // P2 输入源
+    private IInputSource _p2InputSource;
+    // P1 与 P2 输入帧的双路缓冲区
     private DualInputBuffer _dualInputBuffer;
     // 输入采集、填充与消费的调度器
     private DualInputScheduler _inputScheduler;
     // 最后执行帧
     private int _lastInputWaitTick = -1;
-    // 本地写入调度延迟Tick数
+    // P1 写入调度延迟Tick数
     private int _currentLocalInputDelayTicks = LocalInputDelayTicks;
     // 最后执行帧的状态
     private InputReadyState _lastInputWaitState = InputReadyState.Ready;
@@ -122,34 +122,34 @@ public class SimulationDriver : MonoBehaviour
                 {
                     Debug.Log("SimulationDriver: Replay Finished.");
                     StopReplayAndReturnToLive();
-                    return;
+                    break;
                 }
 
                 HandleInputNotReady(_runner.Tick, readyState);
-                return;
+                break;
             }
-            if (!_inputScheduler.TryConsume(_runner.Tick, _runMode, out InputFrame inputFrame, out InputFrame remoteInput))
+            if (!_inputScheduler.TryConsume(_runner.Tick, _runMode, out InputFrame p1Input, out InputFrame p2Input))
             {
                 if (_runMode == SimulationRunMode.Replay && _runner.Tick > _inputScheduler.GetRecordMaxTick())
                 {
                     Debug.Log("SimulationDriver: Replay Finished.");
                     StopReplayAndReturnToLive();
-                    return;
+                    break;
                 }
                 Debug.LogError($"SimulationDriver: Failed to get input for tick {_runner.Tick}.");
-                return;
+                break;
             }
 
             ClearInputWaitState();
 
             FrameInputBundle inputBundle = new FrameInputBundle(
                 _runner.Tick,
-                inputFrame,
-                remoteInput
+                p1Input,
+                p2Input
             );
             ProcessReplayFrameResult(inputBundle, _runner.CurrentWorld);
-            _runner.Step(inputBundle);
-            Debug.Log($"执行了LocalInput Tick={inputFrame.Tick}, RemoteInput Tick={remoteInput.Tick}");
+            Debug.Log(_runner.Step(inputBundle));
+            Debug.Log($"SimulationDriver: Stepped simulation to tick {_runner.Tick}.hash={_runner.CurrentHash}.");
             _accumulator -= tickInterval;
             ResolveEnemyDied();
         }
@@ -237,13 +237,13 @@ public class SimulationDriver : MonoBehaviour
             if(playerController == null)
             {
                 Debug.LogError("SimulationDriver: PlayerController was not found when switching to live mode.");
-                _localInputSource = null;
-                _remoteInputSource = null;
+                _p1InputSource = null;
+                _p2InputSource = null;
                 return;
             }
         }
-        _localInputSource = new LiveInputSource(playerController);
-        _remoteInputSource = new MockRemoteInputSource();
+        _p1InputSource = new LiveInputSource(playerController);
+        _p2InputSource = new MockRemoteInputSource();
         _runMode = SimulationRunMode.Live;
         _verifier = null;
         _recorder = new ReplayRecorder();
@@ -253,31 +253,31 @@ public class SimulationDriver : MonoBehaviour
         ResetSimulationWorld();
     }
 
-    public void SetNetworkLiveMode(uint seed, RemoteInputQueueSource localInputSource, RemoteInputQueueSource remoteInputSource)
+    public void SetNetworkLiveMode(uint seed, RemoteInputQueueSource p1InputSource, RemoteInputQueueSource p2InputSource)
     {
-        if(localInputSource == null)
+        if(p1InputSource == null)
         {
-            Debug.LogError("SimulationDriver: localInputSource 为空.");
-            _localInputSource = null;
-            _remoteInputSource = null;
+            Debug.LogError("SimulationDriver: p1InputSource 为空.");
+            _p1InputSource = null;
+            _p2InputSource = null;
             return;
         }
-        if(remoteInputSource == null)
+        if(p2InputSource == null)
         {
-            Debug.LogError("SimulationDriver: remoteInputSource 为空.");
-            _localInputSource = null;
-            _remoteInputSource = null;
+            Debug.LogError("SimulationDriver: p2InputSource 为空.");
+            _p1InputSource = null;
+            _p2InputSource = null;
             return;
         }
 
-        _localInputSource = localInputSource;
-        _remoteInputSource = remoteInputSource;
+        _p1InputSource = p1InputSource;
+        _p2InputSource = p2InputSource;
         _runMode = SimulationRunMode.Live;
         _verifier = null;
         _recorder = new ReplayRecorder();
         _seed = seed;
         _recorder.BeginRecording(config, _seed);
-        _currentLocalInputDelayTicks = 0; // 网络模式下本地输入不额外添加延迟
+        _currentLocalInputDelayTicks = 0; // 网络模式下 P1 输入不额外添加延迟
         ResetSimulationWorld();
     }
 
@@ -298,8 +298,8 @@ public class SimulationDriver : MonoBehaviour
         ViewSyncManager.Instance.ResetSceneView(_localPlayerID, _initialPlayerPosition, _initialSceneEnemies);
         _seed = replayData.Seed;
 
-        _localInputSource = new ReplayInputSource(replayData);
-        _remoteInputSource = new MockRemoteInputSource();
+        _p1InputSource = new ReplayInputSource(replayData);
+        _p2InputSource = new MockRemoteInputSource();
         _runMode = SimulationRunMode.Replay;
         _recorder = null;
         _verifier = new ReplayVerifier();
@@ -430,8 +430,8 @@ public class SimulationDriver : MonoBehaviour
         _dualInputBuffer = new DualInputBuffer();
         _inputScheduler = new DualInputScheduler(
             _dualInputBuffer,
-            _localInputSource,
-            _remoteInputSource,
+            _p1InputSource,
+            _p2InputSource,
             _currentLocalInputDelayTicks,
             ReplayInputDelayTick
         );
@@ -491,11 +491,11 @@ public class SimulationDriver : MonoBehaviour
         SetLiveMode();
     }
 
-    public void PushRemoteInput(InputFrame inputFrame)
+    public void PushP2Input(InputFrame inputFrame)
     {
-        if (_remoteInputSource is RemoteInputQueueSource remoteInputQueueSource)
+        if (_p2InputSource is RemoteInputQueueSource p2InputQueueSource)
         {
-            remoteInputQueueSource.PushInput(inputFrame);
+            p2InputQueueSource.PushInput(inputFrame);
         }
     }
 
@@ -556,7 +556,6 @@ public class SimulationDriver : MonoBehaviour
         _lastInputWaitTick = tick;
         _lastInputWaitState = readyState;
     
-        Debug.Log($"SimulationDriver: Waiting input at tick {tick}, state={readyState}.");
     }
 
     private void ClearInputWaitState()

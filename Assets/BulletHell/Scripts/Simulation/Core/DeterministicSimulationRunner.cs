@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using BulletHell.Simulation.Core;
 
 
@@ -49,7 +50,7 @@ public class DeterministicSimulationRunner
         get => _enemyDiedEntityIds;
     }
 
-    public void Step(FrameInputBundle inputBundle)
+    public string Step(FrameInputBundle inputBundle)
     {
         _enemyDiedEntityIds.Clear();
         // 推进输入与世界状态
@@ -62,11 +63,12 @@ public class DeterministicSimulationRunner
         nextWorld = ResolveEnemyBulletHits(nextWorld);
         _currentWorld = nextWorld;
         CurrentHash = WorldStateHasher.Compute(_currentWorld);
+        return _currentWorld.PlayersDetail();
     }
 
     private WorldSnapshot ResolveInput(WorldSnapshot world, FrameInputBundle inputBundle)
     {
-        bool shouldFire = PlayerSimulator.ShouldFire(world.Players[0], inputBundle.LocalInput);
+        bool shouldFire = PlayerSimulator.ShouldFire(world.Players[0], inputBundle.P1Input);
         WorldSnapshot nextWorld = WorldSimulator.Step(world, inputBundle, _random);
         if(shouldFire)  // 生成新子弹
         {

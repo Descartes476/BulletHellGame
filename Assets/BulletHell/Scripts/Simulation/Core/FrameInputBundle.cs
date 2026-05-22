@@ -3,14 +3,14 @@ namespace BulletHell.Simulation.Core
     public readonly struct FrameInputBundle
     {
         public int Tick { get; }
-        public InputFrame LocalInput { get; }
-        public InputFrame RemoteInput { get; }
+        public InputFrame P1Input { get; }
+        public InputFrame P2Input { get; }
 
-        public FrameInputBundle(int tick, InputFrame localInput, InputFrame remoteInput)
+        public FrameInputBundle(int tick, InputFrame p1Input, InputFrame p2Input)
         {
             Tick = tick;
-            LocalInput = localInput;
-            RemoteInput = remoteInput;
+            P1Input = p1Input;
+            P2Input = p2Input;
         }
     }
 }

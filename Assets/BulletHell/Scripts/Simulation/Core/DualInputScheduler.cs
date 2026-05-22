@@ -4,23 +4,23 @@ using BulletHell.Simulation.Core;
 public class DualInputScheduler
 {
     private readonly DualInputBuffer _buffer;
-    private readonly IInputSource _localInputSource;
-    private readonly IInputSource _remoteInputSource;
-    private readonly int _localInputDelayTicks;
+    private readonly IInputSource _p1InputSource;
+    private readonly IInputSource _p2InputSource;
+    private readonly int _p1InputDelayTicks;
     private readonly int _replayPrefetchTicks;
     
     public DualInputScheduler(
         DualInputBuffer buffer,
-        IInputSource localInputSource,
-        IInputSource remoteInputSource,
-        int localInputDelayTicks,
+        IInputSource p1InputSource,
+        IInputSource p2InputSource,
+        int p1InputDelayTicks,
         int replayPrefetchTicks
         )
     {
         _buffer = buffer ?? throw new System.ArgumentNullException(nameof(buffer));
-        _localInputSource = localInputSource;
-        _remoteInputSource = remoteInputSource;
-        _localInputDelayTicks = localInputDelayTicks;
+        _p1InputSource = p1InputSource;
+        _p2InputSource = p2InputSource;
+        _p1InputDelayTicks = p1InputDelayTicks;
         _replayPrefetchTicks = replayPrefetchTicks;
     }
 
@@ -36,11 +36,11 @@ public class DualInputScheduler
 
     public void WarmupLive()
     {
-        for(int tick = 0; tick < _localInputDelayTicks; tick++)
+        for(int tick = 0; tick < _p1InputDelayTicks; tick++)
         {
-            if(!_buffer.HasLocal(tick))
+            if(!_buffer.HasP1(tick))
             {
-                _buffer.StoreLocal(tick, CreateNeutralInput(tick));
+                _buffer.StoreP1(tick, CreateNeutralInput(tick));
             }
         }
     }
@@ -52,25 +52,25 @@ public class DualInputScheduler
 
     public InputReadyState GetReadyState(int tick, SimulationRunMode runMode)
     {
-        bool hasLocal = _buffer.HasLocal(tick);
+        bool hasP1 = _buffer.HasP1(tick);
         if(runMode == SimulationRunMode.Replay)
         {
-            return hasLocal ? InputReadyState.Ready : InputReadyState.MissingLocal;
+            return hasP1 ? InputReadyState.Ready : InputReadyState.MissingLocal;
         }
 
-        bool hasRemote = _buffer.HasRemote(tick);
+        bool hasP2 = _buffer.HasP2(tick);
  
-        if(hasLocal && hasRemote)
+        if(hasP1 && hasP2)
         {
             return InputReadyState.Ready;
         }
     
-        if(!hasLocal && !hasRemote)
+        if(!hasP1 && !hasP2)
         {
             return InputReadyState.MissingBoth;
         }
     
-        if(!hasLocal)
+        if(!hasP1)
         {
             return InputReadyState.MissingLocal;
         }
@@ -78,26 +78,26 @@ public class DualInputScheduler
         return InputReadyState.MissingRemote;
     }
 
-    public bool TryConsume(int tick, SimulationRunMode runMode, out InputFrame localInput, out InputFrame remoteInput)
+    public bool TryConsume(int tick, SimulationRunMode runMode, out InputFrame p1Input, out InputFrame p2Input)
     {
-        localInput = default;
-        remoteInput = default;
+        p1Input = default;
+        p2Input = default;
         if(runMode == SimulationRunMode.Replay)
         {
-            if(!_buffer.TryConsumeLocal(tick, out localInput))
+            if(!_buffer.TryConsumeP1(tick, out p1Input))
             {
                 return false;
             }
-            remoteInput = CreateNeutralInput(tick);
+            p2Input = CreateNeutralInput(tick);
             return true;
         }
 
-        if (!_buffer.TryConsumeLocal(tick, out localInput))
+        if (!_buffer.TryConsumeP1(tick, out p1Input))
         {
             return false;
         }
  
-        if (!_buffer.TryConsumeRemote(tick, out remoteInput))
+        if (!_buffer.TryConsumeP2(tick, out p2Input))
         {
             return false;
         }
@@ -107,54 +107,54 @@ public class DualInputScheduler
 
     private void FillLive(int currentTick)
     {
-        FillLocalLive(currentTick);
-        FillRemoteLive(currentTick);
+        FillP1Live(currentTick);
+        FillP2Live(currentTick);
     }
     
-    private void FillLocalLive(int currentTick)
+    private void FillP1Live(int currentTick)
     {
-        if(_localInputSource == null)
+        if(_p1InputSource == null)
         {
             return;
         }
-        int targetTick = currentTick + _localInputDelayTicks;
-        if(_buffer.HasLocal(targetTick))
+        int targetTick = currentTick + _p1InputDelayTicks;
+        if(_buffer.HasP1(targetTick))
         {
             return;
         }
-        if(_localInputSource.TryGetInput(targetTick, out InputFrame input))
+        if(_p1InputSource.TryGetInput(targetTick, out InputFrame input))
         {
-            _buffer.StoreLocal(targetTick, input);
+            _buffer.StoreP1(targetTick, input);
         }
     }
 
-    private void FillRemoteLive(int currentTick)
+    private void FillP2Live(int currentTick)
     {
-        if (_remoteInputSource == null)
+        if (_p2InputSource == null)
         {
             return;
         }
  
-        if (_buffer.HasRemote(currentTick))
+        if (_buffer.HasP2(currentTick))
         {
             return;
         }
  
-        if (_remoteInputSource.TryGetInput(currentTick, out InputFrame input))
+        if (_p2InputSource.TryGetInput(currentTick, out InputFrame input))
         {
-            _buffer.StoreRemote(currentTick, input);
+            _buffer.StoreP2(currentTick, input);
         }
     }
 
     private void FillReplay(int currentTick)
     {
-        FillLocalReplay(currentTick);
-        FillRemoteReplay(currentTick);
+        FillP1Replay(currentTick);
+        FillP2Replay(currentTick);
     }
 
-    private void FillLocalReplay(int currentTick)
+    private void FillP1Replay(int currentTick)
     {
-        if (_localInputSource == null)
+        if (_p1InputSource == null)
         {
             return;
         }
@@ -162,33 +162,33 @@ public class DualInputScheduler
         int endTickExclusive = currentTick + _replayPrefetchTicks;
         for (int tick = currentTick; tick < endTickExclusive; tick++)
         {
-            if (_buffer.HasLocal(tick))
+            if (_buffer.HasP1(tick))
             {
                 continue;
             }
  
-            if (_localInputSource.TryGetInput(tick, out InputFrame input))
+            if (_p1InputSource.TryGetInput(tick, out InputFrame input))
             {
-                _buffer.StoreLocal(tick, input);
+                _buffer.StoreP1(tick, input);
             }
         }
     }
 
-    private void FillRemoteReplay(int currentTick)
+    private void FillP2Replay(int currentTick)
     {
-        if (_remoteInputSource == null)
+        if (_p2InputSource == null)
         {
             return;
         }
  
-        if (_buffer.HasRemote(currentTick))
+        if (_buffer.HasP2(currentTick))
         {
             return;
         }
  
-        if (_remoteInputSource.TryGetInput(currentTick, out InputFrame input))
+        if (_p2InputSource.TryGetInput(currentTick, out InputFrame input))
         {
-            _buffer.StoreRemote(currentTick, input);
+            _buffer.StoreP2(currentTick, input);
         }
     }
 
@@ -199,6 +199,6 @@ public class DualInputScheduler
 
     public int GetRecordMaxTick()
     {
-        return _localInputSource != null ? _localInputSource.GetRecordMaxTick() : 0;
+        return _p1InputSource != null ? _p1InputSource.GetRecordMaxTick() : 0;
     }
 }

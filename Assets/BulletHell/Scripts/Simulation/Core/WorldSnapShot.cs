@@ -1,3 +1,6 @@
+using Unity.VisualScripting.FullSerializer;
+using UnityEngine;
+
 namespace BulletHell.Simulation.Core
 {
     public readonly struct WorldSnapshot
@@ -35,6 +38,19 @@ namespace BulletHell.Simulation.Core
             Players = players == null ? new PlayerSimState[0] : (PlayerSimState[])players.Clone();
             Bullets = bullets == null ? new BulletSimState[0] : (BulletSimState[])bullets.Clone();
             Enemies = enemies == null ? new EnemySimState[0] : (EnemySimState[])enemies.Clone();
+        }
+
+        public string PlayersDetail()
+        {
+            if (Players == null || Players.Length == 0)
+                return "No players.";
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            for (int i = 0; i < Players.Length; i++)
+            {
+                var p = Players[i];
+                sb.AppendLine($"Player {p.EntityId}: Pos={p.Position}, Aim={p.AimDirection}, HP={p.Hp}, Alive={p.IsAlive}, FireCD={p.FireCooldownTicks}, RespawnCD={p.RespawnCountdownTicks}, InvincibleTicks={p.InvincibleTicks}");
+            }
+            return sb.ToString();
         }
     }
 }

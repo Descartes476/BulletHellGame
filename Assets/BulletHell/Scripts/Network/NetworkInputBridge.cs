@@ -76,7 +76,6 @@ public class NetworkInputBridge : MonoBehaviour
 
     private void HandleFrameReceived(int frameTick, InputFrame localInput, InputFrame remoteInput)
     {
-        Debug.Log($"Frame received tick={frameTick}, localInputTick={localInput.Tick}, remoteInputTick={remoteInput.Tick}");
         _remoteConfirmInputSource.PushInput(remoteInput);
         _localConfirmInputSource.PushInput(localInput);
     }

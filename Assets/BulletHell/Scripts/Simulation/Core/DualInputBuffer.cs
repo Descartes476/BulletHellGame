@@ -2,48 +2,48 @@ using BulletHell.Simulation.Core;
 
 public sealed class DualInputBuffer
 {
-    private readonly InputBuffer _localBuffer = new InputBuffer();
-    private readonly InputBuffer _remoteBuffer = new InputBuffer();
+    private readonly InputBuffer _p1Buffer = new InputBuffer();
+    private readonly InputBuffer _p2Buffer = new InputBuffer();
 
-    public void StoreLocal(int tick, in InputFrame input)
+    public void StoreP1(int tick, in InputFrame input)
     {
-        _localBuffer.Store(tick, input);
+        _p1Buffer.Store(tick, input);
     }
 
-    public void StoreRemote(int tick, in InputFrame input)
+    public void StoreP2(int tick, in InputFrame input)
     {
-        _remoteBuffer.Store(tick, input);
+        _p2Buffer.Store(tick, input);
     }
 
-    public bool HasLocal(int tick)
+    public bool HasP1(int tick)
     {
-        return _localBuffer.HasInput(tick);
+        return _p1Buffer.HasInput(tick);
     }
 
-    public bool HasRemote(int tick)
+    public bool HasP2(int tick)
     {
-        return _remoteBuffer.HasInput(tick);
+        return _p2Buffer.HasInput(tick);
     }
 
-    public bool TryConsumeLocal(int tick, out InputFrame input)
+    public bool TryConsumeP1(int tick, out InputFrame input)
     {
-        return _localBuffer.TryConsume(tick, out input);
+        return _p1Buffer.TryConsume(tick, out input);
     }
 
-    public bool TryConsumeRemote(int tick, out InputFrame input)
+    public bool TryConsumeP2(int tick, out InputFrame input)
     {
-        return _remoteBuffer.TryConsume(tick, out input);
+        return _p2Buffer.TryConsume(tick, out input);
     }
 
     public bool IsReady(int tick)
     {
-        return HasLocal(tick) && HasRemote(tick);
+        return HasP1(tick) && HasP2(tick);
     }
 
     public void Clear()
     {
-        _localBuffer.Clear();
-        _remoteBuffer.Clear();
+        _p1Buffer.Clear();
+        _p2Buffer.Clear();
     }
 
 }

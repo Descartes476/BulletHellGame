@@ -30,7 +30,7 @@ public sealed class ReplayInputSource : IInputSource
             ReplayFrame curFrame = frames[i];
             if(curFrame.Tick == tick)
             {
-                inputFrame = curFrame.Input.LocalInput;
+                inputFrame = curFrame.Input.P1Input;
                 return true;
             }
         }

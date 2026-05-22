@@ -22,11 +22,13 @@ namespace BulletHell.Simulation.Core
             //玩家推进
             PlayerSimState[] currentPlayers = currentWorld.Players;
             PlayerSimState[] nextPlayers = new PlayerSimState[currentPlayers.Length];
+            // 这里有个比较关键的地方，玩家1应该使用 inputBundle 中的 P1Input，玩家2应该使用 P2Input，
+            // 而不是玩家1使用 LocalInput，玩家2使用 RemoteInput。这样语义会更清晰一些。
             if(currentPlayers.Length > 0)
             {
                 nextPlayers[0] = PlayerSimulator.Step(
                     currentPlayers[0],
-                    inputBundle.LocalInput,
+                    inputBundle.P1Input,
                     config
                 );
             }
@@ -35,7 +37,7 @@ namespace BulletHell.Simulation.Core
             {
                 nextPlayers[1] = PlayerSimulator.Step(
                     currentPlayers[1],
-                    inputBundle.RemoteInput,
+                    inputBundle.P2Input,
                     config
                 );
             }

@@ -43,7 +43,6 @@ public class UdpLockstepClient : MonoBehaviour
     private ClientState _state = ClientState.Idle;
 
     // 消息事件
-    public event Action<InputFrame> OnRemoteInputReceived;
     public event Action<int, InputFrame, InputFrame> OnFrameReceived;
     public event Action<string> OnFatalError;
     public event Action OnConnected;
@@ -220,10 +219,7 @@ public class UdpLockstepClient : MonoBehaviour
                 if (PacketCodec.TryDecodeFrame(data, header,
                         out int tick, out InputFrame p1, out InputFrame p2))
                 {
-                    InputFrame localInput = (_playerId == 0) ? p1 : p2;
-                    InputFrame remoteInput = (_playerId == 0) ? p2 : p1;
-                    OnFrameReceived?.Invoke(tick, localInput, remoteInput);
-                    OnRemoteInputReceived?.Invoke(remoteInput);
+                    OnFrameReceived?.Invoke(tick, p1, p2);
                 }
                 break;
 
