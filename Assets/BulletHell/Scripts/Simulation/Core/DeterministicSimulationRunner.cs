@@ -1,22 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using BulletHell.Simulation.Core;
-
-
 
 public class DeterministicSimulationRunner
 {
-    private struct ValidationResult
-    {
-        public string TestName;
-        public bool Passed;
-        public int Ticks;
-        public uint Seed;
-        public ulong FinalHash;
-        public int MismatchTick;
-    }
-    
     private SimulationConfig _config;
     private WorldSnapshot _currentWorld;
     private DeterministicRandom _random;
@@ -50,7 +37,7 @@ public class DeterministicSimulationRunner
         get => _enemyDiedEntityIds;
     }
 
-    public string Step(FrameInputBundle inputBundle)
+    public void Step(FrameInputBundle inputBundle)
     {
         _enemyDiedEntityIds.Clear();
         // 推进输入与世界状态
@@ -63,22 +50,32 @@ public class DeterministicSimulationRunner
         nextWorld = ResolveEnemyBulletHits(nextWorld);
         _currentWorld = nextWorld;
         CurrentHash = WorldStateHasher.Compute(_currentWorld);
-        return _currentWorld.PlayersDetail();
     }
 
     private WorldSnapshot ResolveInput(WorldSnapshot world, FrameInputBundle inputBundle)
-    {
-        bool shouldFire = PlayerSimulator.ShouldFire(world.Players[0], inputBundle.P1Input);
+    {        
         WorldSnapshot nextWorld = WorldSimulator.Step(world, inputBundle, _random);
-        if(shouldFire)  // 生成新子弹
-        {
-            int bulletEntityID = _nextBulletEntityID++;
-            FixVector3 bulletPosition = nextWorld.Player.Position;
-            FixVector3 fallbackDirection = world.Player.AimDirection.GetNormalizedOr(new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero));
-            // 归一化，目标太近则给一个默认方向
-            FixVector3 bulletDirection = nextWorld.Player.AimDirection.GetNormalizedOr(fallbackDirection);
 
-            BulletSimState bullet = new BulletSimState(
+        List<BulletSimState> bullets = new List<BulletSimState>();
+        bullets.AddRange(nextWorld.Bullets);
+
+        for(int i = 0; i < world.Players.Length; i++)
+        {
+            PlayerSimState oldPlayer = world.Players[i];
+            PlayerSimState nextPlayer = nextWorld.Players[i];
+            InputFrame input = GetInputForPlayerIndex(inputBundle, i);
+
+            if (!PlayerSimulator.ShouldFire(oldPlayer, input))
+            {
+                continue;
+            }
+
+            int bulletEntityID = _nextBulletEntityID++;
+            FixVector3 bulletPosition = nextPlayer.Position;
+            FixVector3 fallbackDirection = oldPlayer.AimDirection.GetNormalizedOr(new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero));
+            FixVector3 bulletDirection = nextPlayer.AimDirection.GetNormalizedOr(fallbackDirection);
+
+            bullets.Add(new BulletSimState(
                 bulletEntityID,
                 bulletPosition,
                 bulletDirection,
@@ -86,17 +83,26 @@ public class DeterministicSimulationRunner
                 _config.PlayerBulletDamage,
                 _config.PlayerBulletHitRadius,
                 _config.PlayerBulletLifetimeTicks,
-                BulletFaction.Player
-            );
-            var nextWorldBullets = nextWorld.Bullets;
-            BulletSimState[] newBullets = new BulletSimState[nextWorldBullets.Length + 1];
-            Array.Copy(nextWorldBullets, newBullets, nextWorldBullets.Length);
-            newBullets[nextWorldBullets.Length] = bullet;
-            nextWorld = new WorldSnapshot(nextWorld.Tick, nextWorld.Config, nextWorld.Players, newBullets, nextWorld.Enemies);
+                BulletFaction.Player,
+                oldPlayer.EntityId
+            ));
         }
-        return nextWorld;
+
+        return new WorldSnapshot(
+            nextWorld.Tick,
+            nextWorld.Config,
+            nextWorld.Players,
+            bullets.ToArray(),
+            nextWorld.Enemies
+        );
     }
     
+
+    private static InputFrame GetInputForPlayerIndex(FrameInputBundle inputBundle, int playerIndex)
+    {
+        return playerIndex == 0 ? inputBundle.P1Input : inputBundle.P2Input;
+    }
+
     // 敌人开火生成子弹
     private WorldSnapshot ResolveEnemyFire(WorldSnapshot world)
     {
@@ -125,7 +131,8 @@ public class DeterministicSimulationRunner
                     _config.EnemyBulletDamage,
                     _config.EnemyBulletHitRadius,
                     _config.EnemyBulletLifetimeTicks,
-                    BulletFaction.Enemy
+                    BulletFaction.Enemy,
+                    0
                 );
                 bulletSims.Add(bullet);
                 coolDownTick = _config.EnemyFireIntervalTicks;
@@ -179,22 +186,27 @@ public class DeterministicSimulationRunner
     // 处理敌方子弹对玩家的命中结算，并移除命中的敌方子弹
     private WorldSnapshot ResolveEnemyBulletHits(WorldSnapshot world)
     {
-        PlayerSimState player = world.Player;
-        if(!player.IsAlive)
-        {
-            return world;
-        }
         BulletSimState[] bulletSims = world.Bullets;
-        bool isAlive = player.IsAlive;
-        Fix64 nextHp = player.Hp;
-        int respawnCountdownTicks = player.RespawnCountdownTicks;
-        int invincibleTicks = player.InvincibleTicks;
+        PlayerSimState[] players = (PlayerSimState[])world.Players.Clone();
         List<BulletSimState> bulletsNotHit = new List<BulletSimState>();
         for(int i=0; i<bulletSims.Length; i++)
         {
             BulletSimState bullet = bulletSims[i];
-            if(bullet.Faction == BulletFaction.Enemy && isAlive) // 避免循环中死亡还吃子弹
+            if(bullet.Faction != BulletFaction.Enemy)
             {
+                bulletsNotHit.Add(bullet);
+                continue;
+            }
+
+            bool hitPlayer = false;
+            for(int playerIndex = 0; playerIndex < players.Length; playerIndex++)
+            {
+                PlayerSimState player = players[playerIndex];
+                if(!player.IsAlive)
+                {
+                    continue;
+                }
+
                 // 计算玩家受击
                 FixVector3 playerPos = player.Position;
                 FixVector3 bulletPos = bullet.Position;   
@@ -203,6 +215,10 @@ public class DeterministicSimulationRunner
                 Fix64 r = bullet.Radius + player.HitRadius;
                 if (sqrDistanceInPanel <= r * r)
                 {
+                    Fix64 nextHp = player.Hp;
+                    int respawnCountdownTicks = player.RespawnCountdownTicks;
+                    int invincibleTicks = player.InvincibleTicks;
+                    bool isAlive = player.IsAlive;
                     if(!player.IsInvincible)
                     {
                         nextHp -= bullet.Damage;
@@ -214,30 +230,30 @@ public class DeterministicSimulationRunner
                             invincibleTicks = 0;
                         }
                     }
-                }
-                else
-                {
-                    bulletsNotHit.Add(bullet);
+
+                    players[playerIndex] = new PlayerSimState(
+                        player.EntityId,
+                        player.Position,
+                        player.AimDirection,
+                        nextHp,
+                        player.HitRadius,
+                        isAlive,
+                        player.FireCooldownTicks,
+                        respawnCountdownTicks,
+                        invincibleTicks
+                    );
+
+                    hitPlayer = true;
+                    break;
                 }
             }
-            else
+
+            if(!hitPlayer)
             {
                 bulletsNotHit.Add(bullet);
             }
         }
-        player = new PlayerSimState(
-            player.EntityId,
-            player.Position,
-            player.AimDirection,
-            nextHp,
-            player.HitRadius,
-            isAlive,
-            player.FireCooldownTicks,
-            respawnCountdownTicks,
-            invincibleTicks
-        );
-        PlayerSimState[] players = (PlayerSimState[])world.Players.Clone();
-        players[0] = player;
+
         return new WorldSnapshot(
             world.Tick,
             world.Config,

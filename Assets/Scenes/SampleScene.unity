@@ -289,6 +289,8 @@ MonoBehaviour:
   _serverIp: 127.0.0.1
   _serverPort: 7777
   _localPortArray: 621e0000631e0000641e0000651e0000
+  _inputLeadTick: 3
+  _maxInputPerUpdate: 4
 --- !u!4 &286224588
 Transform:
   m_ObjectHideFlags: 0

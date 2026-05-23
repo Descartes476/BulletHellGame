@@ -4,5 +4,6 @@ public enum NetMessageType : byte
     Welcome    = 2,
     Input      = 3,
     Frame      = 4,
+    HashReport = 5,
 }
 

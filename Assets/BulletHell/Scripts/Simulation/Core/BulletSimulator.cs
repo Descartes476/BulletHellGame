@@ -15,7 +15,8 @@ namespace BulletHell.Simulation.Core
                 currentBullet.Damage,
                 currentBullet.Radius,
                 nextLifetimeTick,
-                currentBullet.Faction
+                currentBullet.Faction,
+                currentBullet.OwnerPlayerId
             );
         }
     }

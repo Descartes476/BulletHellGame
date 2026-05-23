@@ -76,6 +76,7 @@ namespace BulletHell.Network
                 case NetMessageType.Welcome:
                 case NetMessageType.Input:
                 case NetMessageType.Frame:
+                case NetMessageType.HashReport:
                     return true;
                 default:
                     return false;

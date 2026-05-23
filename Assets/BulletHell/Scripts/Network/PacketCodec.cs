@@ -48,6 +48,17 @@ public static class PacketCodec
         return ms.ToArray();
     }
 
+    public static byte[] EncodeHashReport(ushort seq, int clientId, byte playerId, int tick, ulong hash)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+        PacketHeader.Write(writer, new PacketHeader(NetMessageType.HashReport, seq, clientId));
+        writer.Write(playerId);
+        writer.Write(tick);
+        writer.Write(hash);
+        return ms.ToArray();
+    }
+
     public static bool TryDecodeHeader(byte[] data, out PacketHeader header)
     {
         header = default;
@@ -125,6 +136,24 @@ public static class PacketCodec
         tick = reader.ReadInt32();
         p1 = InputFrameSerializer.Read(reader);
         p2 = InputFrameSerializer.Read(reader);
+        return true;
+    }
+
+    public static bool TryDecodeHashReport(byte[] data, PacketHeader header, out byte playerId, out int tick, out ulong hash)
+    {
+        playerId = 0;
+        tick = 0;
+        hash = 0;
+        int expectedSize = PacketHeader.HeaderSize + sizeof(byte) + sizeof(int) + sizeof(ulong);
+        if (!HasExpectedSize(data, expectedSize) || header.Type != NetMessageType.HashReport || !header.IsValid)
+            return false;
+
+        using var ms = new MemoryStream(data);
+        using var reader = new BinaryReader(ms);
+        reader.BaseStream.Seek(PacketHeader.HeaderSize, SeekOrigin.Begin);
+        playerId = reader.ReadByte();
+        tick = reader.ReadInt32();
+        hash = reader.ReadUInt64();
         return true;
     }
 

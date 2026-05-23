@@ -10,6 +10,7 @@ namespace BulletHell.Simulation.Core
         public Fix64 Radius { get; } // 子弹碰撞范围
         public int RemainingLifetimeTicks { get; }
         public BulletFaction Faction { get; }
+        public int OwnerPlayerId { get; }
 
         public bool IsAlive => RemainingLifetimeTicks > 0;
 
@@ -21,7 +22,8 @@ namespace BulletHell.Simulation.Core
             Fix64 damage,
             Fix64 radius,
             int remainingLifetimeTicks,
-            BulletFaction faction)
+            BulletFaction faction,
+            int ownerPlayerId = 0)
         {
             EntityId = entityId;
             Position = position;
@@ -31,6 +33,7 @@ namespace BulletHell.Simulation.Core
             Radius = radius;
             RemainingLifetimeTicks = remainingLifetimeTicks;
             Faction = faction;
+            OwnerPlayerId = ownerPlayerId;
         }
     }
 }

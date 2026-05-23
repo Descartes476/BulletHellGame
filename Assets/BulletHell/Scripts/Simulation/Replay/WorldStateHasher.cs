@@ -60,6 +60,7 @@ public static class WorldStateHasher
         builder.Add(bullet.Radius);
         builder.Add(bullet.RemainingLifetimeTicks);
         builder.Add((int)bullet.Faction);
+        builder.Add(bullet.OwnerPlayerId);
         builder.Add(bullet.IsAlive);
     }
 

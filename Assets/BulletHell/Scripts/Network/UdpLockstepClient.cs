@@ -100,7 +100,7 @@ public class UdpLockstepClient : MonoBehaviour
         _state = ClientState.Connecting;
 
         // 发送Hello包
-        var helloPacket = PacketCodec.EncodeHello(0, 0, (uint)new System.Random().Next());
+        var helloPacket = PacketCodec.EncodeHello(0, _clientId, (uint)new System.Random().Next());
         _outgoingPackets.Add(helloPacket);
         Debug.Log($"正在连接服务器 {serverIp}:{serverPort}，本地端口 {localPort}");
     }
@@ -163,6 +163,16 @@ public class UdpLockstepClient : MonoBehaviour
             return;
         byte[] data = PacketCodec.EncodeInput(
             _sendSequence++, _clientId, _playerId, input);
+        _outgoingPackets.Add(data);
+    }
+
+    public void SendHashReport(int tick, ulong hash)
+    {
+        if (_state != ClientState.Connected)
+            return;
+
+        byte[] data = PacketCodec.EncodeHashReport(
+            _sendSequence++, _clientId, _playerId, tick, hash);
         _outgoingPackets.Add(data);
     }
     

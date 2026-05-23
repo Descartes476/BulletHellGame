@@ -7,18 +7,38 @@ public class NetworkInputBridge : MonoBehaviour
 {
     [SerializeField]
     private UdpLockstepClient _client;
+
     [SerializeField]
     private string _serverIp = "127.0.0.1";
+
     [SerializeField]
     private int _serverPort = 7777;
+
     [SerializeField]
     private int[] _localPortArray = { 7778 , 7779, 7780, 7781 }; // 支持多个客户端实例时使用不同的本地端口
-    private float _inputSendInterval = 0.05f; // 输入发送间隔，单位秒 
-    private int _sendTick;
-    private float _sendAccumulator;
-    private readonly RemoteInputQueueSource _remoteConfirmInputSource = new RemoteInputQueueSource();
-    private readonly RemoteInputQueueSource _localConfirmInputSource = new RemoteInputQueueSource();
-    // Start is called before the first frame update
+
+    [SerializeField]
+    private int _inputLeadTick = 3;
+
+    [SerializeField]
+    private int _maxInputPerUpdate = 4; // 每帧最多补发的未来输入数量，用于快速填满输入提前窗口。
+    
+    [SerializeField]
+    private int _redundantInputCount = 3;
+
+    private int _lastReceivedTick = -1;
+
+    private int _lastSentTick = -1;
+
+    private PlayerController _controlledPlayer;
+
+    private Dictionary<int, InputFrame> _sentInputs = new Dictionary<int, InputFrame>();
+
+    private readonly RemoteInputQueueSource _p2ConfirmInputSource = new RemoteInputQueueSource();
+
+    private readonly RemoteInputQueueSource _p1ConfirmInputSource = new RemoteInputQueueSource();
+
+
     void Awake()
     {
         if(_client == null)
@@ -32,6 +52,7 @@ public class NetworkInputBridge : MonoBehaviour
         _client.OnConnected += HandleConnected;
         _client.OnFatalError += HandleFatalError;
         _client.OnFrameReceived += HandleFrameReceived;
+        SimulationDriver.OnNetworkHashSampled += HandleNetworkHashSampled;
         int localPort = 0;
         foreach (var port in _localPortArray)
         {
@@ -44,17 +65,6 @@ public class NetworkInputBridge : MonoBehaviour
         _client.Connect(_serverIp, _serverPort, localPort);
     }
 
-    private void OnDestroy()
-    {
-        if(_client == null)
-            return;
-        _client.OnConnected -= HandleConnected;
-        _client.OnFatalError -= HandleFatalError;
-        _client.OnFrameReceived -= HandleFrameReceived;
-        _client.Disconnect();
-    }
-
-    // Update is called once per frame
     void Update()
     {
         _client.Tick();
@@ -64,43 +74,88 @@ public class NetworkInputBridge : MonoBehaviour
             return;
         }
 
-        _sendAccumulator += Time.deltaTime;
-        while (_sendAccumulator >= _inputSendInterval)
+        SendInputAhead();
+    }
+
+    private void OnDestroy()
+    {
+        if(_client == null)
+            return;
+        _client.OnConnected -= HandleConnected;
+        _client.OnFatalError -= HandleFatalError;
+        _client.OnFrameReceived -= HandleFrameReceived;
+        SimulationDriver.OnNetworkHashSampled -= HandleNetworkHashSampled;
+        _client.Disconnect();
+    }
+
+    private void SendInputAhead()
+    {
+        int simulationTick = SimulationDriver.Instance != null
+            ? SimulationDriver.Instance.CurrentTick
+            : _client.StartTick;
+
+        int targetSendTick = Mathf.Max(
+            _client.StartTick + _inputLeadTick,
+            simulationTick + _inputLeadTick
+        );
+
+        int sendThisUpdate = 0;
+
+        while (_lastSentTick < targetSendTick && sendThisUpdate < _maxInputPerUpdate)
         {
-            _sendAccumulator -= _inputSendInterval;
-            InputFrame inputFrame = CreateInputFrame();
+            int tickToSend = _lastSentTick + 1;
+            InputFrame inputFrame = GetInputFrame(tickToSend);
+            _sentInputs[tickToSend] = inputFrame;
             _client.SendInput(inputFrame);
-            _sendTick++;
+            ResendInputs(tickToSend);
+            TrimSentInputCache(tickToSend);
+            _lastSentTick = tickToSend;
+            sendThisUpdate++;
         }
     }
 
-    private void HandleFrameReceived(int frameTick, InputFrame localInput, InputFrame remoteInput)
+    public InputFrame GetInputFrame(int tick)
     {
-        _remoteConfirmInputSource.PushInput(remoteInput);
-        _localConfirmInputSource.PushInput(localInput);
+        if(_controlledPlayer == null)
+        {
+            Debug.LogError($"无法获取玩家控制器，玩家ID: {_client.PlayerId}");
+            return new InputFrame();
+        }
+        return _controlledPlayer.SampleCurrentInputFrame(tick);
     }
 
-    public InputFrame CreateInputFrame()
+    private void HandleFrameReceived(int frameTick, InputFrame p1Input, InputFrame p2Input)
     {
-        sbyte moveX = _client.PlayerId == 0 ? (sbyte)1 : (sbyte)-1;
-        sbyte moveY = 0;
+        if(frameTick > _lastReceivedTick)
+        {
+            _lastReceivedTick = frameTick;
+        }
+        _p1ConfirmInputSource.PushInput(p1Input);
+        _p2ConfirmInputSource.PushInput(p2Input);
+        SimulationDriver.Instance.SetLastConfirmedNetworkTick(frameTick);
+    }
 
-        bool fire = _sendTick % 10 == 0;
-
-        return new InputFrame(
-            _sendTick, // Tick
-            moveX,
-            moveY,
-            aimX: 0,
-            aimY: 1,
-            fire
-        );
+    private void HandleNetworkHashSampled(int tick, ulong hash)
+    {
+        _client.SendHashReport(tick, hash);
     }
 
     private void HandleConnected()
     {
         Debug.Log($"已连接服务器，玩家ID: {_client.PlayerId}, 玩家数量: {_client.PlayerCount}, 起始Tick: {_client.StartTick}, 随机种子: {_client.Seed}");
-        SimulationDriver.Instance.SetNetworkLiveMode(_client.Seed, _localConfirmInputSource, _remoteConfirmInputSource);
+        ViewSyncManager.Instance.SetPlayerView(_client.PlayerId);
+        _controlledPlayer = ViewSyncManager.Instance.GetPlayerView(_client.PlayerId);
+        if(_controlledPlayer == null)
+        {
+            Debug.LogError($"无法绑定本地控制玩家，玩家ID: {_client.PlayerId}");
+            return;
+        }
+        _lastReceivedTick = _client.StartTick - 1;
+        _lastSentTick = _client.StartTick - 1;
+        _sentInputs.Clear();
+        _p1ConfirmInputSource.Clear();
+        _p2ConfirmInputSource.Clear();
+        SimulationDriver.Instance.SetNetworkLiveMode(_client.Seed, _p1ConfirmInputSource, _p2ConfirmInputSource, _client.PlayerId);
     }
 
     private void HandleFatalError(string error)
@@ -121,6 +176,35 @@ public class NetworkInputBridge : MonoBehaviour
         catch (System.Net.Sockets.SocketException)
         {
             return false;
+        }
+    }
+
+    private void ResendInputs(int latestTick)
+    {
+        int startResendTick = Mathf.Max(_client.StartTick, latestTick - _redundantInputCount);
+        for (int tick = startResendTick; tick < latestTick; tick++)
+        {
+            if (_sentInputs.TryGetValue(tick, out InputFrame inputFrame))
+            {
+                _client.SendInput(inputFrame);
+            }
+        }
+    }
+
+    private void TrimSentInputCache(int latestTick)
+    {
+        List<int> ticksToRemove = new List<int>();
+        int minTickToKeep = latestTick - _redundantInputCount - 10;
+        foreach (var kvp in _sentInputs)
+        {
+            if (kvp.Key < minTickToKeep)
+            {
+                ticksToRemove.Add(kvp.Key);
+            }
+        }
+        foreach (int tick in ticksToRemove)
+        {
+            _sentInputs.Remove(tick);
         }
     }
 }

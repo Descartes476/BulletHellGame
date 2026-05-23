@@ -99,13 +99,18 @@ namespace BulletHell.Simulation.Core
         {
             if(playerController == null)
             {
-                if (_playerPrefab != null)
+                playerController = GetPlayerView(playerId);
+                if(playerController == null)
                 {
-                    playerController = Instantiate(_playerPrefab, startPos, Quaternion.identity);
-                }
-                else
-                {
-                    Debug.LogError("ViewSynManager: Player Prefab is not assigned.");
+                    if (_playerPrefab != null)
+                    {
+                        playerController = Instantiate(_playerPrefab, startPos, Quaternion.identity);
+                    }
+                    else
+                    {
+                        Debug.LogError("ViewSynManager: Player Prefab is not assigned.");
+                        return;
+                    }
                 }
             }
             

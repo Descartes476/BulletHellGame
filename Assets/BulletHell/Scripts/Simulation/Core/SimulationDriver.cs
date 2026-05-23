@@ -2,9 +2,6 @@ using UnityEngine;
 using BulletHell.Simulation.Core;
 using System;
 using System.Collections.Generic;
-using System.Reflection;
-using UnityEngine.tvOS;
-using UnityEngine.SocialPlatforms;
 
 public enum SimulationRunMode
 {
@@ -14,62 +11,95 @@ public enum SimulationRunMode
 
 public class SimulationDriver : MonoBehaviour
 {
-    // 默认使用的模拟配置资源
-    [SerializeField] private SimulationConfigAsset defaultConfigAsset;
-
-    // 输入缓冲相对当前tick的预拉取提前量
+    // 回放输入相对当前 tick 的预读取提前量
     private const int ReplayInputDelayTick = 2;
-    // 本地输入写入调度时附加的固定延迟tick数
+
+    // P1 输入写入调度时附加的固定延迟 tick 数，网络确认模式下会设为 0。
     private const int LocalInputDelayTicks = 2;
+
     public static SimulationDriver Instance { get; private set; }
-
-    // 当前运行时使用的模拟配置
-    private SimulationConfig config;
-
-    // P1 输入源
-    private IInputSource _p1InputSource;
-    // P2 输入源
-    private IInputSource _p2InputSource;
-    // P1 与 P2 输入帧的双路缓冲区
-    private DualInputBuffer _dualInputBuffer;
-    // 输入采集、填充与消费的调度器
-    private DualInputScheduler _inputScheduler;
-    // 最后执行帧
-    private int _lastInputWaitTick = -1;
-    // P1 写入调度延迟Tick数
-    private int _currentLocalInputDelayTicks = LocalInputDelayTicks;
-    // 最后执行帧的状态
-    private InputReadyState _lastInputWaitState = InputReadyState.Ready;
-    // 当前模拟运行模式
-    private SimulationRunMode _runMode = SimulationRunMode.Live;
-    // 统一的确定性仿真推进器
-    private DeterministicSimulationRunner _runner;
-    // 实时模式下用于录制回放数据的记录器
-    private ReplayRecorder _recorder;
-    // 回放模式下用于校验世界状态的校验器
-    private ReplayVerifier _verifier;
-    // 帧时间累积器，用于按固定tick推进模拟
-    private float _accumulator;
-    // 下一个可分配的敌人实体ID
-    private int _nextEnemyEntityID = 1;
-    // 玩家实体使用的固定ID
-    private int _localPlayerID = 1;
-    private int _remotePlayerID = 2;
-    // 随机种子
-    private uint _seed = 0;
-    // 场景初始时的玩家位置
-    private Dictionary<int, Vector3> _initialPlayerPosition = new Dictionary<int, Vector3>();
-    // 场景初始时缓存的敌人对象列表
-    private List<EnemyBase> _initialSceneEnemies = new List<EnemyBase>();
-    // 场景初始时各敌人对象对应的位置缓存
-    private Dictionary<EnemyBase, Vector3> _initialEnemyPositions = new Dictionary<EnemyBase, Vector3>();
 
     public static event System.Action<int, int> OnPlayerHpChanged;
     public static event System.Action<int, int> OnPlayerSpawned;
     public static event System.Action<int> OnPlayerRespawnCountDownChanged;
+    public static event System.Action<int, ulong> OnNetworkHashSampled;
+
+    [Header("Config")]
+    // 默认使用的模拟配置资源
+    [SerializeField] private SimulationConfigAsset defaultConfigAsset;
+
+    // 当前运行时使用的模拟配置
+    private SimulationConfig config;
+
+    // 当前模拟运行模式
+    private SimulationRunMode _runMode = SimulationRunMode.Live;
+
+    // 当前是否由网络对战模式驱动实时模拟
+    private bool _isNetworkLiveMode = false;
+
+    // 本机玩家在玩家数组中的位置
+    private int _localPlayerSlot = 0;
+
+    // 最后收到网络确认的 tick
+    private int _lastConfirmedNetworkTick = -1;
+
+    // P1 输入源
+    private IInputSource _p1InputSource;
+
+    // P2 输入源
+    private IInputSource _p2InputSource;
+
+    // P1 与 P2 输入帧的双路缓冲区
+    private DualInputBuffer _dualInputBuffer;
+
+    // 输入采集、填充与消费的调度器
+    private DualInputScheduler _inputScheduler;
+
+    // 本地输入写入调度延迟 tick 数
+    private int _currentLocalInputDelayTicks = LocalInputDelayTicks;
+
+    // 最近一次等待输入的 tick
+    private int _lastInputWaitTick = -1;
+
+    // 最近一次等待输入的状态
+    private InputReadyState _lastInputWaitState = InputReadyState.Ready;
+
+    // 统一的确定性仿真推进器
+    private DeterministicSimulationRunner _runner;
+
+    // 实时模式下用于录制回放数据的记录器
+    private ReplayRecorder _recorder;
+
+    // 回放模式下用于校验世界状态的校验器
+    private ReplayVerifier _verifier;
+
+    // 帧时间累积器，用于按固定tick推进模拟
+    private float _accumulator;
+
+    // 下一个可分配的敌人实体ID
+    private int _nextEnemyEntityID = 1;
+
+    // 玩家视图映射使用的槽位 ID，对应服务端 playerId：P1=0，P2=1。
+    private int _p1PlayerID = 0;
+    private int _p2PlayerID = 1;
+
+    // 随机种子
+    private uint _seed = 0;
+
+    // 场景初始时的玩家位置
+    private Dictionary<int, Vector3> _initialPlayerPosition = new Dictionary<int, Vector3>();
+
+    // 场景初始时缓存的敌人对象列表
+    private List<EnemyBase> _initialSceneEnemies = new List<EnemyBase>();
+
+    // 场景初始时各敌人对象对应的位置缓存
+    private Dictionary<EnemyBase, Vector3> _initialEnemyPositions = new Dictionary<EnemyBase, Vector3>();
 
     public SimulationRunMode RunMode => _runMode;
+
     public bool IsReplayRunning => _runMode == SimulationRunMode.Replay;
+
+    public int CurrentTick => _runner != null ? _runner.Tick : -1;
 
     void Start()
     {
@@ -85,8 +115,8 @@ public class SimulationDriver : MonoBehaviour
 
         config = defaultConfigAsset.ToSimulationConfig();
         ViewSyncManager.Instance.SetConfig(config);
-        ViewSyncManager.Instance.SetPlayerView(_localPlayerID);
-        ViewSyncManager.Instance.SetPlayerView(_remotePlayerID);
+        ViewSyncManager.Instance.SetPlayerView(_p1PlayerID);
+        ViewSyncManager.Instance.SetPlayerView(_p2PlayerID);
         CacheInitialSceneState(); // 记录场景初始状态
     }
 
@@ -110,8 +140,10 @@ public class SimulationDriver : MonoBehaviour
 
         float tickInterval = 1f / config.TickRate;
         _accumulator += Time.deltaTime;
+        int maxStepsThisUpdate = GetMaxSimulationStepsThisUpdate();
+        int stepsTaken = 0;
 
-        while (_accumulator >= tickInterval)
+        while (_accumulator >= tickInterval && stepsTaken < maxStepsThisUpdate)
         {
             _inputScheduler.Fill(_runner.Tick, _runMode);
             InputReadyState readyState = _inputScheduler.GetReadyState(_runner.Tick, _runMode);
@@ -148,19 +180,30 @@ public class SimulationDriver : MonoBehaviour
                 p2Input
             );
             ProcessReplayFrameResult(inputBundle, _runner.CurrentWorld);
-            Debug.Log(_runner.Step(inputBundle));
-            Debug.Log($"SimulationDriver: Stepped simulation to tick {_runner.Tick}.hash={_runner.CurrentHash}.");
+            _runner.Step(inputBundle);
+            if (_isNetworkLiveMode && _runner.Tick % 60 == 0)
+            {
+                int bufferedTicks = _lastConfirmedNetworkTick - _runner.Tick;
+                Debug.Log($"[NetSync] Tick={_runner.Tick} Confirmed={_lastConfirmedNetworkTick} Buffered={bufferedTicks} Hash={_runner.CurrentHash}");
+                OnNetworkHashSampled?.Invoke(_runner.Tick, _runner.CurrentHash);
+            }
             _accumulator -= tickInterval;
             ResolveEnemyDied();
+            stepsTaken++;
         }
 
         WorldSnapshot newWorld = _runner.CurrentWorld;
         ViewSyncManager viewSyncManager = ViewSyncManager.Instance;
-        var playerSyncResult = viewSyncManager.SyncPlayerView(oldWorld.Player, newWorld.Player, _localPlayerID);
-        // 同步玩家2（若存在），不触发本地HUD事件
-        if (oldWorld.Players.Length > 1 && newWorld.Players.Length > 1)
+        PlayerViewSyncResult playerSyncResult = default;
+        int localPlayerIndex = Mathf.Clamp(_localPlayerSlot, 0, newWorld.Players.Length - 1);
+        // 同步所有玩家视图，仅为本地玩家触发 HUD 事件
+        for(int i = 0; i < newWorld.Players.Length; i++)
         {
-            viewSyncManager.SyncPlayerView(oldWorld.Players[1], newWorld.Players[1], _remotePlayerID);
+            PlayerViewSyncResult syncResult = viewSyncManager.SyncPlayerView(oldWorld.Players[i], newWorld.Players[i], GetPlayerViewIdByIndex(i));
+            if(i == localPlayerIndex)
+            {
+                playerSyncResult = syncResult;
+            }
         }
         viewSyncManager.SyncBulletViews(newWorld.Bullets);
         viewSyncManager.SyncEnemyViews(newWorld.Enemies);
@@ -193,7 +236,7 @@ public class SimulationDriver : MonoBehaviour
         }
     }
 
-    //触发敌人死亡事件
+    // 触发敌人死亡事件
     private void ResolveEnemyDied()
     {
         if (_runner == null)
@@ -220,9 +263,11 @@ public class SimulationDriver : MonoBehaviour
             return false;
         }
 
-        currentHp = (int)_runner.CurrentWorld.Player.Hp;
+        int localPlayerIndex = Mathf.Clamp(_localPlayerSlot, 0, _runner.CurrentWorld.Players.Length - 1);
+        PlayerSimState localPlayer = _runner.CurrentWorld.Players[localPlayerIndex];
+        currentHp = (int)localPlayer.Hp;
         maxHp = (int)config.PlayerMaxHp;
-        respawnCountdownTicks = _runner.CurrentWorld.Player.RespawnCountdownTicks;
+        respawnCountdownTicks = localPlayer.RespawnCountdownTicks;
         return true;
     }
 
@@ -233,7 +278,7 @@ public class SimulationDriver : MonoBehaviour
 
         if (playerController == null)
         {
-            playerController = ViewSyncManager.Instance.GetPlayerView(_localPlayerID);
+            playerController = ViewSyncManager.Instance.GetPlayerView(_p1PlayerID);
             if(playerController == null)
             {
                 Debug.LogError("SimulationDriver: PlayerController was not found when switching to live mode.");
@@ -250,10 +295,12 @@ public class SimulationDriver : MonoBehaviour
         _seed = 1;
         _recorder.BeginRecording(config, _seed);
         _currentLocalInputDelayTicks = LocalInputDelayTicks;
+        _isNetworkLiveMode = false;
+        _localPlayerSlot = 0;
         ResetSimulationWorld();
     }
 
-    public void SetNetworkLiveMode(uint seed, RemoteInputQueueSource p1InputSource, RemoteInputQueueSource p2InputSource)
+    public void SetNetworkLiveMode(uint seed, RemoteInputQueueSource p1InputSource, RemoteInputQueueSource p2InputSource, int localPlayerSlot = 0)
     {
         if(p1InputSource == null)
         {
@@ -276,8 +323,11 @@ public class SimulationDriver : MonoBehaviour
         _verifier = null;
         _recorder = new ReplayRecorder();
         _seed = seed;
-        _recorder.BeginRecording(config, _seed);
         _currentLocalInputDelayTicks = 0; // 网络模式下 P1 输入不额外添加延迟
+        _isNetworkLiveMode = true;
+        _localPlayerSlot = Mathf.Clamp(localPlayerSlot, 0, 1);
+        _lastConfirmedNetworkTick = -1;
+        _recorder.BeginRecording(config, _seed);
         ResetSimulationWorld();
     }
 
@@ -295,12 +345,14 @@ public class SimulationDriver : MonoBehaviour
         }
 
 
-        ViewSyncManager.Instance.ResetSceneView(_localPlayerID, _initialPlayerPosition, _initialSceneEnemies);
+        ViewSyncManager.Instance.ResetSceneView(_p1PlayerID, _initialPlayerPosition, _initialSceneEnemies);
         _seed = replayData.Seed;
 
         _p1InputSource = new ReplayInputSource(replayData);
         _p2InputSource = new MockRemoteInputSource();
         _runMode = SimulationRunMode.Replay;
+        _isNetworkLiveMode = false;
+        _localPlayerSlot = 0;
         _recorder = null;
         _verifier = new ReplayVerifier();
         _verifier.Load(replayData);
@@ -387,21 +439,21 @@ public class SimulationDriver : MonoBehaviour
 
         ViewSyncManager viewSyncManager = ViewSyncManager.Instance;
         
-        PlayerController localPlayer = viewSyncManager.GetPlayerView(_localPlayerID);
+        PlayerController localPlayer = viewSyncManager.GetPlayerView(_p1PlayerID);
         if(localPlayer == null)
         {
             Debug.LogError("SimulationDriver: PlayerController is null.");
             return;
         }
-        _initialPlayerPosition[_localPlayerID] = localPlayer.transform.position;
+        _initialPlayerPosition[_p1PlayerID] = localPlayer.transform.position;
 
-        PlayerController remotePlayer = viewSyncManager.GetPlayerView(_remotePlayerID);
+        PlayerController remotePlayer = viewSyncManager.GetPlayerView(_p2PlayerID);
         if(remotePlayer == null)
         {
             Debug.LogError("SimulationDriver: PlayerController is null.");
             return;
         }
-        _initialPlayerPosition[_remotePlayerID] = remotePlayer.transform.position;
+        _initialPlayerPosition[_p2PlayerID] = remotePlayer.transform.position;
 
 
         EnemyBase[] sceneEnemies = FindObjectsOfType<EnemyBase>();
@@ -440,10 +492,10 @@ public class SimulationDriver : MonoBehaviour
         ViewSyncManager.Instance?.RestoreSceneActors(_initialPlayerPosition,
         _initialSceneEnemies, _initialEnemyPositions);
 
-        _initialPlayerPosition.TryGetValue(_localPlayerID, out Vector3 localPlayerPos);
+        _initialPlayerPosition.TryGetValue(_p1PlayerID, out Vector3 localPlayerPos);
         // 模拟层初始化
         PlayerSimState player1 = new PlayerSimState(
-            1,
+            0,
             new FixVector3((Fix64)localPlayerPos.x, (Fix64)localPlayerPos.y, (Fix64)localPlayerPos.z),
             new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
             config.PlayerMaxHp,
@@ -453,9 +505,9 @@ public class SimulationDriver : MonoBehaviour
             0,
             0);
             
-        _initialPlayerPosition.TryGetValue(_remotePlayerID, out Vector3 remotePlayerPos);
+        _initialPlayerPosition.TryGetValue(_p2PlayerID, out Vector3 remotePlayerPos);
         PlayerSimState player2 = new PlayerSimState(
-            2,
+            1,
             new FixVector3((Fix64)remotePlayerPos.x, (Fix64)remotePlayerPos.y, (Fix64)remotePlayerPos.z),
             new FixVector3(Fix64.Zero, Fix64.One, Fix64.Zero),
             config.PlayerMaxHp,
@@ -499,6 +551,11 @@ public class SimulationDriver : MonoBehaviour
         }
     }
 
+    private int GetPlayerViewIdByIndex(int playerIndex)
+    {
+        return playerIndex == 0 ? _p1PlayerID : _p2PlayerID;
+    }
+
     private EnemySimState[] GetEnemySimStates()
     {
         List<EnemySimState> enemySimStates = new List<EnemySimState>();
@@ -533,19 +590,6 @@ public class SimulationDriver : MonoBehaviour
         return enemySimStates.ToArray();
     }
 
-    //获取Transform路径
-    private static string GetTransformPath(Transform current)
-    {
-        string path = current.name;
-        while (current.parent != null)
-        {
-            current = current.parent;
-            path = current.name + "/" + path;
-        }
-
-        return path;
-    }
-
     private void HandleInputNotReady(int tick, InputReadyState readyState)
     {
         if (_lastInputWaitTick == tick && _lastInputWaitState == readyState)
@@ -558,10 +602,53 @@ public class SimulationDriver : MonoBehaviour
     
     }
 
+    public void SetLastConfirmedNetworkTick(int tick)
+    {
+        if(tick > _lastConfirmedNetworkTick)
+        {
+            _lastConfirmedNetworkTick = tick;
+        }
+    }
+
+    private int GetMaxSimulationStepsThisUpdate()
+    {
+        if (!_isNetworkLiveMode)
+        {
+            return 4; // 或保持原来的无限 while，先给个上限更安全
+        }
+
+        int bufferedTicks = _lastConfirmedNetworkTick - _runner.Tick;
+
+        if (bufferedTicks >= 6)
+        {
+            return 4;
+        }
+
+        if (bufferedTicks >= 3)
+        {
+            return 2;
+        }
+
+        return 1;
+    }
+
     private void ClearInputWaitState()
     {
         _lastInputWaitTick = -1;
         _lastInputWaitState = InputReadyState.Ready;
 
+    }
+
+    // 获取 Transform 路径
+    private static string GetTransformPath(Transform current)
+    {
+        string path = current.name;
+        while (current.parent != null)
+        {
+            current = current.parent;
+            path = current.name + "/" + path;
+        }
+
+        return path;
     }
 }
